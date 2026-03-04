@@ -1,1 +1,14 @@
+name: platform-smoke-test
+language: node
 
+docker:
+  context: .
+  port: 3000
+
+deploy:
+  type: ecs
+  healthcheck: /health
+
+ci:
+  run_tests: false
+  run_security: true
