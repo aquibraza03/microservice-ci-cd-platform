@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Fix Windows Git Bash PATH (yq in ./bin)
+export PATH="./bin:$PATH"
+
 SERVICE="${1:?Usage: $0 <service-name>}"
 TAG="${2:-latest}"
 REGISTRY="${REGISTRY:-}"
@@ -16,8 +19,8 @@ fi
 cd "$SERVICE_PATH"
 
 # Read configuration from service.yml
-PORT=$(yq '.docker.port' service.yml)
-HEALTH=$(yq '.deploy.healthcheck' service.yml)
+PORT=$(./bin/yq '.docker.port' service.yml)
+HEALTH=$(./bin/yq '.deploy.healthcheck' service.yml)
 
 IMAGE="${REGISTRY:+$REGISTRY/}$SERVICE:$TAG"
 
@@ -33,3 +36,5 @@ docker buildx build \
   --load .
 
 echo "✅ Build completed for $SERVICE"
+
+
