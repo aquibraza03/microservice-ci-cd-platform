@@ -7,8 +7,16 @@ IMAGE_TAG="microservice-ci-cd/$SERVICE:${GITHUB_SHA:-local}"
 
 SBOM_DIR="artifacts/sbom"
 SBOM_FILE="$SBOM_DIR/$SERVICE.json"
+SYFT="./bin/syft.exe"
 
 echo "🔎 Generating SBOM for $SERVICE"
+
+# Check Syft exists
+if [[ ! -f "$SYFT" ]]; then
+  echo "❌ Syft not found at $SYFT"
+  echo "Run scripts/setup.sh to install required tools."
+  exit 1
+fi
 
 # Validate service exists
 if [[ ! -f "$SERVICE_PATH/Dockerfile" ]]; then
@@ -27,18 +35,17 @@ else
   echo "♻️ Using existing image $IMAGE_TAG"
 fi
 
-# Generate SBOM using Syft
+# # Generate SBOM
 echo "📋 Generating SBOM with Syft"
-docker run --rm \
-  anchore/syft:v1.0.0 "$IMAGE_TAG" -o cyclonedx-json > "$SBOM_FILE"
+"$SYFT" "$IMAGE_TAG" -o cyclonedx-json > "$SBOM_FILE"
 
-# Validate SBOM file
+# Validate SBOM output
 if [[ ! -s "$SBOM_FILE" ]]; then
   echo "❌ SBOM generation failed"
   exit 1
 fi
 
-# Cleanup image to prevent CI disk exhaustion
+# Cleanup image (optional)
 echo "🧹 Cleaning up image $IMAGE_TAG"
 docker rmi "$IMAGE_TAG" >/dev/null 2>&1 || true
 
