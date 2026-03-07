@@ -29,9 +29,11 @@ fi
 
 # Generate SBOM using Syft
 echo "📋 Generating SBOM with Syft"
+
 docker run --rm \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  anchore/syft:v1.0.0 "$IMAGE_TAG" -o cyclonedx-json > "$SBOM_FILE"
+  -v //var/run/docker.sock:/var/run/docker.sock \
+  anchore/syft:v1.0.0 docker:"$IMAGE_TAG" \
+  -o cyclonedx-json > "$SBOM_FILE"
 
 # Validate SBOM file
 if [[ ! -s "$SBOM_FILE" ]]; then
