@@ -1,0 +1,3 @@
+trivy/
+bin/trivy.exe
+*.zip
