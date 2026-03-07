@@ -5,14 +5,14 @@ set -Eeuo pipefail
 # Config
 ############################################
 
-SERVICE="${1:-}"
-TAG="${2:-latest}"
-MODE="${3:-load}"   # load | push
+SERVICE="${1:?Usage: $0 <service-name> [load|push] [image-prefix]}"
+MODE="${2:-load}"            # load | push
 BUILDER="multiarch-builder"
 SERVICES_DIR="services"
+IMAGE_PREFIX="${3:-${IMAGE_PREFIX:-local}}"
 
 ############################################
-# Colors (disable if not TTY)
+# Colors (disabled if not TTY)
 ############################################
 
 if [[ -t 1 ]]; then
@@ -36,21 +36,20 @@ warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
 err()  { echo -e "${RED}❌ $*${NC}" >&2; }
 
 ############################################
-# Validate input
+# Validate mode
 ############################################
-
-if [[ -z "$SERVICE" ]]; then
-  err "Usage: $0 <service-name> [tag] [load|push]"
-  exit 1
-fi
 
 if [[ "$MODE" != "load" && "$MODE" != "push" ]]; then
   err "Mode must be 'load' or 'push'"
   exit 1
 fi
 
+############################################
+# Paths
+############################################
+
 SERVICE_PATH="${SERVICES_DIR}/${SERVICE}"
-IMAGE="local/${SERVICE}:${TAG}"
+IMAGE="${IMAGE_PREFIX}/${SERVICE}"
 
 if [[ ! -d "$SERVICE_PATH" ]]; then
   err "Service not found: $SERVICE_PATH"
@@ -63,7 +62,7 @@ if [[ ! -f "$SERVICE_PATH/Dockerfile" ]]; then
 fi
 
 ############################################
-# Check Docker
+# Dependency checks
 ############################################
 
 command -v docker >/dev/null || {
@@ -76,18 +75,27 @@ if ! docker buildx version >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -x ./ci/version.sh ]]; then
+  err "ci/version.sh missing or not executable"
+  exit 1
+fi
+
 ############################################
 # Setup builder
 ############################################
 
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
   log "Creating builder: $BUILDER"
-  docker buildx create \
+
+  if ! docker buildx create \
     --name "$BUILDER" \
     --driver docker-container \
-    --use
+    --use; then
+
+    warn "Builder creation failed, falling back to default builder"
+    docker buildx use default
+  fi
 else
-  log "Using existing builder: $BUILDER"
   docker buildx use "$BUILDER"
 fi
 
@@ -107,17 +115,15 @@ else
 fi
 
 ############################################
-# Git metadata
+# Generate version tags
 ############################################
 
-IMAGE_SHA=""
+mapfile -t VERSION_TAGS < <(./ci/version.sh)
 
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  GIT_SHA=$(git rev-parse --short HEAD)
-  IMAGE_SHA="local/${SERVICE}:${GIT_SHA}"
-else
-  warn "Git repo not detected, skipping SHA tag"
-fi
+TAG_ARGS=()
+for TAG in "${VERSION_TAGS[@]}"; do
+  TAG_ARGS+=("-t" "$IMAGE:$TAG")
+done
 
 ############################################
 # Build
@@ -127,27 +133,17 @@ log "Building service: $SERVICE"
 log "Image: $IMAGE"
 log "Platform: $PLATFORM"
 log "Mode: $MODE"
+log "Tags: ${#VERSION_TAGS[@]} tags generated"
 
-BUILD_CMD=(
-  docker buildx build
-  --platform "$PLATFORM"
-  --progress=plain
-  --build-arg BUILDKIT_INLINE_CACHE=1
-  -t "$IMAGE"
-)
-
-if [[ -n "$IMAGE_SHA" ]]; then
-  BUILD_CMD+=( -t "$IMAGE_SHA" )
-fi
-
-BUILD_CMD+=(
-  --cache-from type=registry,ref="$IMAGE"
-  --cache-to type=inline
-  "$OUTPUT"
+docker buildx build \
+  --platform "$PLATFORM" \
+  --progress=plain \
+  --build-arg BUILDKIT_INLINE_CACHE=1 \
+  "${TAG_ARGS[@]}" \
+  --cache-from type=registry,ref="$IMAGE:latest" \
+  --cache-to type=inline \
+  "$OUTPUT" \
   "$SERVICE_PATH"
-)
-
-"${BUILD_CMD[@]}"
 
 ############################################
 # Done
@@ -157,10 +153,8 @@ log "✅ Build completed"
 
 echo
 echo "Images built:"
-echo "  $IMAGE"
-
-if [[ -n "$IMAGE_SHA" ]]; then
-  echo "  $IMAGE_SHA"
-fi
-
+for TAG in "${VERSION_TAGS[@]}"; do
+  echo "  $IMAGE:$TAG"
+done
 echo
+
