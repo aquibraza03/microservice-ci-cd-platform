@@ -3,7 +3,23 @@ set -Eeuo pipefail
 
 SERVICE="${1:?Usage: $0 <service-name>}"
 
+############################################
+# Local override support (developer testing)
+############################################
+
+LOCAL_ENV_FILE=".env.local"
+
+if [[ -f "$LOCAL_ENV_FILE" ]]; then
+  echo "🧪 Loading local overrides from $LOCAL_ENV_FILE"
+  set -a
+  source "$LOCAL_ENV_FILE"
+  set +a
+fi
+
+############################################
 # Environment driven configuration
+############################################
+
 SERVICE_NAME="${SERVICE_NAME:-$SERVICE}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-default}"
 IMAGE_REGISTRY="${IMAGE_REGISTRY:?IMAGE_REGISTRY required}"
@@ -12,11 +28,18 @@ IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG required}"
 # Optional flags (template friendly)
 CREATE_NAMESPACE="${CREATE_NAMESPACE:-false}"
 
+############################################
+# Logging helper
+############################################
+
 log() {
   echo "[K8S-DEPLOY/$SERVICE_NAME] $*"
 }
 
+############################################
 # Check kubectl connectivity
+############################################
+
 check_cluster() {
   kubectl version --client >/dev/null || {
     echo "❌ kubectl not installed"
@@ -29,7 +52,10 @@ check_cluster() {
   }
 }
 
+############################################
 # Optional namespace creation
+############################################
+
 ensure_namespace() {
   if [[ "$CREATE_NAMESPACE" == "true" ]]; then
     kubectl get namespace "$K8S_NAMESPACE" >/dev/null 2>&1 || {
@@ -41,7 +67,10 @@ ensure_namespace() {
   fi
 }
 
-# Apply manifests from template
+############################################
+# Apply manifests from templates
+############################################
+
 deploy_manifests() {
   BASE_DIR="deploy/k8s/base"
 
@@ -51,7 +80,10 @@ deploy_manifests() {
   envsubst < "$BASE_DIR/service.yaml" | kubectl apply -n "$K8S_NAMESPACE" -f -
 }
 
-# Wait for deployment
+############################################
+# Wait for deployment rollout
+############################################
+
 wait_for_rollout() {
   log "Waiting for rollout"
 
@@ -59,6 +91,10 @@ wait_for_rollout() {
     -n "$K8S_NAMESPACE" \
     --timeout=300s
 }
+
+############################################
+# Main execution
+############################################
 
 main() {
   log "Deploying $SERVICE_NAME"
@@ -72,4 +108,5 @@ main() {
 }
 
 main "$@"
+
 
