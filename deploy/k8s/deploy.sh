@@ -25,7 +25,10 @@ K8S_NAMESPACE="${K8S_NAMESPACE:-default}"
 IMAGE_REGISTRY="${IMAGE_REGISTRY:?IMAGE_REGISTRY required}"
 IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG required}"
 
-# Optional flags (template friendly)
+SERVICE_PORT="${SERVICE_PORT:-80}"
+CONTAINER_PORT="${CONTAINER_PORT:-3000}"
+REPLICAS="${REPLICAS:-1}"
+
 CREATE_NAMESPACE="${CREATE_NAMESPACE:-false}"
 
 ############################################
@@ -41,15 +44,16 @@ log() {
 ############################################
 
 check_cluster() {
-  kubectl version --client >/dev/null || {
+
+  if ! command -v kubectl >/dev/null 2>&1; then
     echo "❌ kubectl not installed"
     exit 1
-  }
+  fi
 
-  kubectl cluster-info >/dev/null 2>&1 || {
+  if ! kubectl cluster-info >/dev/null 2>&1; then
     echo "❌ Kubernetes cluster not reachable"
     exit 1
-  }
+  fi
 }
 
 ############################################
@@ -57,34 +61,60 @@ check_cluster() {
 ############################################
 
 ensure_namespace() {
+
   if [[ "$CREATE_NAMESPACE" == "true" ]]; then
-    kubectl get namespace "$K8S_NAMESPACE" >/dev/null 2>&1 || {
+
+    if ! kubectl get namespace "$K8S_NAMESPACE" >/dev/null 2>&1; then
       log "Creating namespace $K8S_NAMESPACE"
       kubectl create namespace "$K8S_NAMESPACE"
-    }
+    fi
+
   else
     log "Using namespace $K8S_NAMESPACE (creation disabled)"
   fi
 }
 
 ############################################
-# Apply manifests from templates
+# Render and apply manifests
 ############################################
 
 deploy_manifests() {
+
   BASE_DIR="deploy/k8s/base"
 
   log "Rendering manifests"
 
+  export SERVICE_NAME
+  export IMAGE_REGISTRY
+  export IMAGE_TAG
+  export K8S_NAMESPACE
+  export SERVICE_PORT
+  export CONTAINER_PORT
+  export REPLICAS
+
+  # Optional ConfigMap
+  if [[ -f "$BASE_DIR/configmap.yaml" ]]; then
+    envsubst < "$BASE_DIR/configmap.yaml" | kubectl apply -n "$K8S_NAMESPACE" -f -
+  fi
+
+  # Optional Secret
+  if [[ -f "$BASE_DIR/secret.yaml" ]]; then
+    envsubst < "$BASE_DIR/secret.yaml" | kubectl apply -n "$K8S_NAMESPACE" -f -
+  fi
+
+  # Deployment
   envsubst < "$BASE_DIR/deployment.yaml" | kubectl apply -n "$K8S_NAMESPACE" -f -
+
+  # Service
   envsubst < "$BASE_DIR/service.yaml" | kubectl apply -n "$K8S_NAMESPACE" -f -
 }
 
 ############################################
-# Wait for deployment rollout
+# Wait for rollout
 ############################################
 
 wait_for_rollout() {
+
   log "Waiting for rollout"
 
   kubectl rollout status deployment/"$SERVICE_NAME" \
@@ -97,9 +127,19 @@ wait_for_rollout() {
 ############################################
 
 main() {
+
   log "Deploying $SERVICE_NAME"
 
   check_cluster
+
+  # Optional AWS EKS kubeconfig setup
+  if [[ -n "${AWS_REGION:-}" && -n "${K8S_CLUSTER_NAME:-}" ]]; then
+    log "Configuring kubeconfig for EKS cluster ${K8S_CLUSTER_NAME}"
+    aws eks update-kubeconfig \
+      --name "${K8S_CLUSTER_NAME}" \
+      --region "${AWS_REGION}"
+  fi
+
   ensure_namespace
   deploy_manifests
   wait_for_rollout
@@ -108,5 +148,6 @@ main() {
 }
 
 main "$@"
+
 
 
