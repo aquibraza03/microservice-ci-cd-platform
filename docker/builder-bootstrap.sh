@@ -2,23 +2,23 @@
 set -Eeuo pipefail
 
 ############################################
-# Docker Buildx Bootstrap Script
+# Docker Buildx Bootstrap
 # Enterprise CI/CD Ready
-# Compatible with:
-#  - GitHub Actions
-#  - Jenkins
-#  - Local Development
 ############################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 BUILDER_NAME="${BUILDER_NAME:-platform-builder}"
-PLATFORM_LIST="${PLATFORM_LIST:-linux/amd64}"
+PLATFORM_LIST="${PLATFORM_LIST:-linux/amd64,linux/arm64}"
 DRIVER="${BUILDER_DRIVER:-docker-container}"
 
 CI="${CI:-false}"
 ENABLE_QEMU="${ENABLE_QEMU:-false}"
+
+############################################
+# Logging
+############################################
 
 log() {
   printf "\n[%s] %s\n" "$(date +'%Y-%m-%d %H:%M:%S')" "$1"
@@ -35,7 +35,7 @@ fail() {
 
 check_dependencies() {
 
-  command -v docker >/dev/null 2>&1 || fail "Docker required but not installed"
+  command -v docker >/dev/null 2>&1 || fail "Docker not installed"
 
   docker info >/dev/null 2>&1 || fail "Docker daemon not running"
 
@@ -51,41 +51,44 @@ detect_context() {
 
   DOCKER_CONTEXT="$(docker context show 2>/dev/null || echo default)"
 
-  log "Using Docker context: $DOCKER_CONTEXT"
+  log "Docker context: $DOCKER_CONTEXT"
 
 }
 
 ############################################
-# Enable QEMU for multi-arch builds
+# Enable QEMU
 ############################################
 
 enable_qemu() {
 
-  if [[ "$ENABLE_QEMU" == "true" ]]; then
-
-    log "Enabling QEMU multi-arch emulation"
-
-    docker run --rm --privileged tonistiigi/binfmt --install all >/dev/null
-
+  if [[ "$ENABLE_QEMU" != "true" ]]; then
+    return
   fi
+
+  log "Checking QEMU support"
+
+  docker run --privileged --rm tonistiigi/binfmt --install all >/dev/null
+
+  log "QEMU enabled for multi-arch builds"
 
 }
 
 ############################################
-# Cleanup old builders in CI
+# Cleanup CI builders
 ############################################
 
 cleanup_old_builders() {
 
-  if [[ "$CI" == "true" ]]; then
-
-    log "Cleaning old builders"
-
-    docker buildx ls --format '{{.Name}}' \
-      | grep -v "^${BUILDER_NAME}$" \
-      | xargs -r docker buildx rm >/dev/null 2>&1 || true
-
+  if [[ "$CI" != "true" ]]; then
+    return
   fi
+
+  log "Cleaning unused builders"
+
+  docker buildx ls --format '{{.Name}}' \
+    | grep "platform-builder" \
+    | grep -v "^${BUILDER_NAME}$" \
+    | xargs -r docker buildx rm >/dev/null 2>&1 || true
 
 }
 
@@ -97,13 +100,15 @@ create_builder() {
 
   if docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
 
-    log "Builder exists: $BUILDER_NAME"
+    log "Using existing builder: $BUILDER_NAME"
 
     docker buildx use "$BUILDER_NAME"
 
   else
 
     log "Creating builder: $BUILDER_NAME"
+    log "Driver: $DRIVER"
+    log "Platforms: $PLATFORM_LIST"
 
     docker buildx create \
       --name "$BUILDER_NAME" \
@@ -136,7 +141,7 @@ print_builder_info() {
 
   log "Builder status"
 
-  docker buildx ls | grep "$BUILDER_NAME" || true
+  docker buildx inspect "$BUILDER_NAME"
 
 }
 
@@ -156,13 +161,15 @@ main() {
   bootstrap_builder
   print_builder_info
 
-  log "✅ Buildx ready"
+  log "Buildx ready"
 
   echo
-  echo "Builder: $BUILDER_NAME"
-  echo "Platforms: $PLATFORM_LIST"
+  echo "Builder : $BUILDER_NAME"
+  echo "Driver  : $DRIVER"
+  echo "Platforms : $PLATFORM_LIST"
   echo
 
 }
 
 main "$@"
+
