@@ -1,11 +1,10 @@
-version: "3.9"
-
 services:
 
   service:
     build:
-      context: ${SERVICE_CONTEXT:-../services/${SERVICE_NAME}}
+      context: ../services/${SERVICE_NAME}
       dockerfile: ${DOCKERFILE_PATH:-Dockerfile}
+
     image: ${IMAGE_REGISTRY:-local}/${SERVICE_NAME}:${IMAGE_TAG:-dev}
 
     container_name: ${SERVICE_NAME}-dev
@@ -20,7 +19,7 @@ services:
       REDIS_HOST: redis
 
     volumes:
-      - ${SERVICE_CONTEXT:-../services/${SERVICE_NAME}}:/app
+      - ../services/${SERVICE_NAME}:/app
 
     depends_on:
       - postgres
@@ -38,11 +37,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev}
       POSTGRES_DB: ${POSTGRES_DB:-platform}
 
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
 
     networks:
       - platform-network
@@ -65,3 +64,4 @@ networks:
 
 volumes:
   postgres-data:
+
