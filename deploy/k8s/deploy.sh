@@ -29,6 +29,9 @@ SERVICE_PORT="${SERVICE_PORT:-80}"
 CONTAINER_PORT="${CONTAINER_PORT:-3000}"
 REPLICAS="${REPLICAS:-1}"
 
+# Deployment version (CI or timestamp)
+DEPLOY_VERSION="${DEPLOY_VERSION:-$(date +%s)}"
+
 CREATE_NAMESPACE="${CREATE_NAMESPACE:-false}"
 
 ############################################
@@ -91,6 +94,7 @@ deploy_manifests() {
   export SERVICE_PORT
   export CONTAINER_PORT
   export REPLICAS
+  export DEPLOY_VERSION
 
   # Optional ConfigMap
   if [[ -f "$BASE_DIR/configmap.yaml" ]]; then
@@ -117,9 +121,19 @@ wait_for_rollout() {
 
   log "Waiting for rollout"
 
-  kubectl rollout status deployment/"$SERVICE_NAME" \
-    -n "$K8S_NAMESPACE" \
-    --timeout=300s
+  if ! kubectl rollout status deployment/"$SERVICE_NAME" \
+      -n "$K8S_NAMESPACE" \
+      --timeout=300s; then
+
+    echo "❌ Deployment failed. Rolling back..."
+
+    kubectl rollout undo deployment/"$SERVICE_NAME" \
+      -n "$K8S_NAMESPACE"
+
+    echo "🔁 Rolled back to previous version"
+
+    exit 1
+  fi
 }
 
 ############################################

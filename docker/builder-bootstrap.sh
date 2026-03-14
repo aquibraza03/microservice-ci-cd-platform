@@ -47,6 +47,15 @@ check_dependencies() {
 # Detect Docker Context
 ############################################
 
+sanitize_docker_env() {
+
+  # Fix Docker Desktop / Git Bash TLS conflicts
+  unset DOCKER_HOST || true
+  unset DOCKER_TLS_VERIFY || true
+  unset DOCKER_CERT_PATH || true
+
+}
+
 detect_context() {
 
   DOCKER_CONTEXT="$(docker context show 2>/dev/null || echo default)"
@@ -148,6 +157,7 @@ main() {
 
   log "=== Docker Buildx Bootstrap ==="
 
+  sanitize_docker_env
   check_dependencies
   detect_context
   cleanup_old_builders

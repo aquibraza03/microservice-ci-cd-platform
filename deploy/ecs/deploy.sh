@@ -9,11 +9,14 @@ SERVICE="${1:?Service required}"
 SERVICES_DIR="${SERVICES_DIR:-services}"
 DEPLOY_DIR="${DEPLOY_DIR:-deploy}"
 
-AWS_REGION="${AWS_REGION:-us-east-1}"
-AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-123456789012}"
-ECS_CLUSTER="${ECS_CLUSTER:-microservices}"
+AWS_REGION="${AWS_REGION:?AWS_REGION required}"
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:?AWS_ACCOUNT_ID required}"
+
+ECS_CLUSTER="${ECS_CLUSTER:?ECS_CLUSTER required}"
 ECS_SERVICE="${ECS_SERVICE:-$SERVICE}"
-IMAGE_PREFIX="${IMAGE_PREFIX:-local}"
+
+IMAGE_REGISTRY="${IMAGE_REGISTRY:?IMAGE_REGISTRY required}"
+IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG required}"
 
 ############################################
 # Helpers
@@ -35,8 +38,23 @@ fail() {
 command -v aws >/dev/null || fail "aws CLI not installed"
 command -v jq >/dev/null || fail "jq not installed"
 
+# Validate AWS credentials
+aws sts get-caller-identity >/dev/null 2>&1 \
+  || fail "AWS credentials not configured"
+
 ############################################
-# Build Task Definition (Windows-safe + Full substitution)
+# Validate ECS Cluster
+############################################
+
+aws ecs describe-clusters \
+  --clusters "$ECS_CLUSTER" \
+  --region "$AWS_REGION" \
+  --query 'clusters[0].status' \
+  --output text >/dev/null \
+  || fail "ECS cluster not found: $ECS_CLUSTER"
+
+############################################
+# Build Task Definition
 ############################################
 
 TEMPLATE="${DEPLOY_DIR}/ecs/taskdef-template.json"
@@ -47,10 +65,11 @@ log "Building task definition"
 # Windows-safe temp file
 TMPDIR="${TMPDIR:-/c/temp}"
 mkdir -p "$TMPDIR"
-TASK_FILE="$TMPDIR/taskdef-$SERVICE-$$.json"
+
+TASK_FILE="$(mktemp "$TMPDIR/taskdef-$SERVICE-XXXX.json")"
 
 jq \
-  --arg IMAGE "$IMAGE_PREFIX/$SERVICE:latest" \
+  --arg IMAGE "$IMAGE_REGISTRY/$SERVICE:$IMAGE_TAG" \
   --arg AWS_ACCOUNT_ID "$AWS_ACCOUNT_ID" \
   --arg AWS_REGION "$AWS_REGION" \
   --arg SERVICE "$SERVICE" \
@@ -58,7 +77,7 @@ jq \
     .containerDefinitions[0].image = $IMAGE |
     .executionRoleArn = ("arn:aws:iam::" + $AWS_ACCOUNT_ID + ":role/ecsTaskExecutionRole") |
     .taskRoleArn = ("arn:aws:iam::" + $AWS_ACCOUNT_ID + ":role/ecsTaskRole") |
-    .logConfiguration.options."awslogs-region" = $AWS_REGION |
+    .containerDefinitions[0].logConfiguration.options."awslogs-region" = $AWS_REGION |
     (.tags[] | select(.key == "Service") | .value) = $SERVICE
   ' "$TEMPLATE" > "$TASK_FILE"
 
@@ -67,6 +86,7 @@ jq \
 ############################################
 
 log "Registering task definition"
+
 TASK_ARN=$(aws ecs register-task-definition \
   --region "$AWS_REGION" \
   --cli-input-json "file://$TASK_FILE" \
@@ -79,18 +99,21 @@ TASK_ARN=$(aws ecs register-task-definition \
 ############################################
 
 log "Updating ECS service: $ECS_SERVICE"
+
 aws ecs update-service \
   --cluster "$ECS_CLUSTER" \
   --service "$ECS_SERVICE" \
   --task-definition "$TASK_ARN" \
   --region "$AWS_REGION" \
-  --force-new-deployment || fail "Service update failed"
+  --force-new-deployment \
+  >/dev/null
 
 ############################################
 # Wait for Stability
 ############################################
 
 log "Waiting for service stability"
+
 aws ecs wait services-stable \
   --cluster "$ECS_CLUSTER" \
   --services "$ECS_SERVICE" \
@@ -101,6 +124,6 @@ aws ecs wait services-stable \
 ############################################
 
 rm -f "$TASK_FILE"
-log "✅ ECS deployment complete: $SERVICE@${TASK_ARN##*/}"
 
+log "✅ ECS deployment complete: $SERVICE@${TASK_ARN##*/}"
 

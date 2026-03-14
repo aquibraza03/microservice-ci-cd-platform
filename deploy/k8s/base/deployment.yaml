@@ -7,6 +7,7 @@ metadata:
 
   labels:
     app: ${SERVICE_NAME}
+    version: "${DEPLOY_VERSION}"
 
 spec:
   replicas: ${REPLICAS}
@@ -19,6 +20,7 @@ spec:
     metadata:
       labels:
         app: ${SERVICE_NAME}
+        version: "${DEPLOY_VERSION}"
 
     spec:
       containers:
@@ -26,7 +28,7 @@ spec:
 
           image: ${IMAGE_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}
 
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
 
           ports:
             - containerPort: ${CONTAINER_PORT}
