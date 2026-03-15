@@ -1,1 +1,33 @@
+name: SERVICE_NAME
 
+runtime: ${SERVICE_RUNTIME:-node}
+
+version: ${SERVICE_VERSION:-dev}
+
+container:
+  port: ${SERVICE_PORT:-3000}
+
+build:
+  dockerfile: ${DOCKERFILE_PATH:-Dockerfile}
+  context: ${BUILD_CONTEXT:-.}
+
+image:
+  registry: ${IMAGE_REGISTRY:-local}
+  tag: ${IMAGE_TAG:-dev}
+
+healthcheck:
+  path: ${HEALTHCHECK_PATH:-/}
+  interval: ${HEALTHCHECK_INTERVAL:-10s}
+  timeout: ${HEALTHCHECK_TIMEOUT:-2s}
+  retries: ${HEALTHCHECK_RETRIES:-3}
+
+resources:
+  cpu: ${SERVICE_CPU:-250m}
+  memory: ${SERVICE_MEMORY:-256Mi}
+
+deployment:
+  replicas: ${SERVICE_REPLICAS:-1}
+
+environment:
+  SERVICE_NAME: SERVICE_NAME
+  SERVICE_PORT: ${SERVICE_PORT:-3000}
