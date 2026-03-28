@@ -51,10 +51,31 @@ install_tool() {
 # -------------------------------
 # Read tools dynamically
 # -------------------------------
-while IFS='=' read -r name url; do
+while IFS= read -r line || [[ -n "$line" ]]; do
 
-  # Skip comments / empty
-  [[ -z "$name" || "$name" =~ ^# ]] && continue
+  # Remove Windows carriage return
+  line="$(echo "$line" | tr -d '\r' | xargs)"
+
+  # Skip empty or comment
+  [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+  # Ensure valid format
+  if [[ "$line" != *=* ]]; then
+    echo "⚠️ Skipping invalid entry: $line"
+    continue
+  fi
+
+  name="${line%%=*}"
+  url="${line#*=}"
+
+  name="$(echo "$name" | xargs)"
+  url="$(echo "$url" | xargs)"
+
+  # Validate URL
+  if [[ -z "$url" ]]; then
+    echo "⚠️ Skipping $name (empty URL)"
+    continue
+  fi
 
   install_tool "$name" "$url"
 
