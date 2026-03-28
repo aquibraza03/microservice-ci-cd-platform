@@ -21,18 +21,21 @@ fail() { echo "❌ $1"; exit 1; }
 warn() { echo "⚠️ $1"; }
 
 # -------------------------------
-# Validation loop (schema-driven)
+# Validation loop (CLEAN + SAFE)
 # -------------------------------
 while IFS= read -r line || [[ -n "$line" ]]; do
 
+  # Trim
   line="$(echo "$line" | xargs)"
 
+  # Skip empty / comments
   [[ -z "$line" || "$line" =~ ^# ]] && continue
 
-  if [[ "$line" != *"="* ]]; then
+  # Ensure valid KEY=VALUE
+  [[ "$line" != *"="* ]] && {
     warn "Skipping invalid schema line: $line"
     continue
-  fi
+  }
 
   var="${line%%=*}"
   rule="${line#*=}"
@@ -40,7 +43,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   var="$(echo "$var" | xargs)"
   rule="$(echo "$rule" | xargs)"
 
-  # Skip invalid variable names
+  # Validate variable name
   [[ ! "$var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && {
     warn "Skipping invalid schema key: $var"
     continue
@@ -49,12 +52,15 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   value="${!var:-}"
 
   # -------------------------------
-  # Safe rule parsing (NO assumptions)
+  # Safe rule parsing (NO crash)
   # -------------------------------
   IFS=':' read -r type required min max pattern <<< "${rule}::::"
 
+  # Skip if no type defined
+  [[ -z "$type" ]] && continue
+
   # -------------------------------
-  # Required validation
+  # Required check
   # -------------------------------
   if [[ "$required" == "true" && -z "$value" ]]; then
     fail "Missing required variable: $var"
@@ -63,21 +69,21 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "$value" ]] && continue
 
   # -------------------------------
-  # Type validation (generic)
+  # Type validation (clean)
   # -------------------------------
   case "$type" in
     number)
-      if ! is_number "$value"; then
-        [[ "$VALIDATION_MODE" == "strict" ]] && fail "$var must be a number" || warn "$var not numeric"
+      if [[ -n "$value" && ! "$value" =~ ^[0-9]+$ ]]; then
+        [[ "$VALIDATION_MODE" == "strict" ]] && fail "$var must be numeric" || warn "$var not numeric"
       fi
       ;;
     boolean)
-      if ! is_boolean "$value"; then
+      if [[ -n "$value" && ! "$value" =~ ^(true|false)$ ]]; then
         [[ "$VALIDATION_MODE" == "strict" ]] && fail "$var must be boolean" || warn "$var not boolean"
       fi
       ;;
-    string|"")
-      # Always allowed
+    string)
+      # always valid
       ;;
     *)
       warn "Unknown type '$type' for $var"
@@ -85,7 +91,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   esac
 
   # -------------------------------
-  # Range validation (only if numeric)
+  # Range validation (only valid numbers)
   # -------------------------------
   if [[ "$type" == "number" && "$value" =~ ^[0-9]+$ ]]; then
 
@@ -100,9 +106,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   fi
 
   # -------------------------------
-  # Pattern validation (optional)
+  # Pattern validation (ONLY if defined)
   # -------------------------------
-  if [[ -n "$pattern" ]]; then
+  if [[ -n "${pattern:-}" && "$pattern" != "" ]]; then
     if ! [[ "$value" =~ $pattern ]]; then
       [[ "$VALIDATION_MODE" == "strict" ]] && fail "$var pattern mismatch" || warn "$var pattern mismatch"
     fi
