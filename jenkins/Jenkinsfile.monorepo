@@ -1,0 +1,122 @@
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile 'jenkins/agents/k8s-pod.yaml'
+      defaultContainer 'runner'
+    }
+  }
+
+  options {
+    timestamps()
+    ansiColor('xterm')
+    disableConcurrentBuilds()
+  }
+
+  parameters {
+    choice(name: 'ENV', choices: ['dev', 'staging', 'prod'], description: 'Deployment environment')
+    booleanParam(name: 'DEPLOY', defaultValue: false, description: 'Enable deployment')
+  }
+
+  environment {
+    CI = "true"
+    PLATFORM_ENV = "${params.ENV}"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Init') {
+      steps {
+        sh 'chmod +x ci/*.sh scripts/*.sh deploy/*.sh'
+        sh './ci/policy.sh'
+      }
+    }
+
+    stage('Detect Changed Services') {
+      steps {
+        sh './ci/detect-services.sh > services.txt'
+        script {
+          env.SERVICES = readFile('services.txt').trim()
+        }
+      }
+    }
+
+    stage('Build Matrix') {
+      when {
+        expression { return env.SERVICES }
+      }
+
+      steps {
+        script {
+          def services = env.SERVICES.split("\n")
+          def parallelStages = [:]
+
+          for (svc in services) {
+            def serviceName = svc.trim()
+
+            parallelStages[serviceName] = {
+              stage("CI - ${serviceName}") {
+                container('runner') {
+                  sh """
+                    export SERVICE=${serviceName}
+
+                    ./ci/validate-service.sh ${serviceName}
+                    ./ci/version.sh ${serviceName}
+                    ./ci/build.sh ${serviceName}
+                    ./ci/test.sh ${serviceName}
+                    ./ci/security.sh ${serviceName}
+                  """
+                }
+              }
+            }
+          }
+
+          parallel parallelStages, failFast: true
+        }
+      }
+    }
+
+    stage('Docker Build & Push') {
+      steps {
+        container('runner') {
+          sh './ci/docker-buildx.sh'
+        }
+      }
+    }
+
+    stage('Smoke Test') {
+      steps {
+        sh './ci/smoke-test.sh'
+      }
+    }
+
+    stage('Deploy') {
+      when {
+        allOf {
+          expression { return params.DEPLOY == true }
+          branch 'main'
+        }
+      }
+      steps {
+        sh "./deploy/deploy.sh ${PLATFORM_ENV}"
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "✅ Pipeline succeeded"
+    }
+    failure {
+      echo "❌ Pipeline failed"
+    }
+    always {
+      archiveArtifacts artifacts: 'services.txt', fingerprint: true
+    }
+  }
+}
