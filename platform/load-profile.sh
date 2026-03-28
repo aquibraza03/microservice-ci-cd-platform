@@ -39,15 +39,35 @@ echo "⚙️ Loading platform profile: $PROFILE"
 load_env_file() {
   local file=$1
 
-  while IFS='=' read -r key value; do
-    # Skip comments and empty lines
-    [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+  while IFS= read -r line || [[ -n "$line" ]]; do
 
-    # Trim spaces
+    # Trim whitespace
+    line="$(echo "$line" | xargs)"
+
+    # Skip empty lines & comments
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+    # Ensure valid KEY=VALUE format
+    if [[ "$line" != *"="* ]]; then
+      echo "⚠️ Skipping invalid line: $line"
+      continue
+    fi
+
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    # Trim again
     key="$(echo "$key" | xargs)"
     value="$(echo "$value" | xargs)"
 
+    # Validate key
+    if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      echo "⚠️ Skipping invalid key: $key"
+      continue
+    fi
+
     export "$key"="$value"
+
   done < "$file"
 }
 
