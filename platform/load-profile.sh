@@ -41,13 +41,10 @@ load_env_file() {
 
   while IFS= read -r line || [[ -n "$line" ]]; do
 
-    # Trim whitespace
     line="$(echo "$line" | xargs)"
 
-    # Skip empty lines & comments
     [[ -z "$line" || "$line" =~ ^# ]] && continue
 
-    # Ensure valid KEY=VALUE format
     if [[ "$line" != *"="* ]]; then
       echo "⚠️ Skipping invalid line: $line"
       continue
@@ -56,11 +53,10 @@ load_env_file() {
     key="${line%%=*}"
     value="${line#*=}"
 
-    # Trim again
     key="$(echo "$key" | xargs)"
     value="$(echo "$value" | xargs)"
 
-    # Validate key
+    # Skip invalid variable names (cross-platform safe)
     if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       echo "⚠️ Skipping invalid key: $key"
       continue
@@ -88,18 +84,27 @@ else
 fi
 
 # -------------------------------
-# Apply runtime overrides (highest priority)
+# Apply runtime overrides (SAFE)
 # -------------------------------
-for var in $(env | grep '_OVERRIDE=' | cut -d= -f1); do
+while IFS='=' read -r var value; do
+
+  # Only process *_OVERRIDE variables
+  [[ "$var" != *_OVERRIDE ]] && continue
+
+  # Validate variable name
+  if [[ ! "$var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    continue
+  fi
+
   base_var="${var%_OVERRIDE}"
-  override_value="${!var}"
 
   echo "🔧 Applying override: $base_var"
-  export "$base_var"="$override_value"
-done
+  export "$base_var"="$value"
+
+done < <(env)
 
 # -------------------------------
-# Normalize values (generic, safe)
+# Normalize values (SAFE + CROSS PLATFORM)
 # -------------------------------
 normalize_bool() {
   case "$1" in
@@ -109,14 +114,20 @@ normalize_bool() {
   esac
 }
 
-# Normalize known flags dynamically
-for var in $(env | cut -d= -f1); do
-  value="${!var}"
+while IFS='=' read -r var _; do
+
+  # Skip invalid variable names (Windows fix)
+  if [[ ! "$var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    continue
+  fi
+
+  value="${!var:-}"
 
   if [[ "$value" =~ ^(true|false|TRUE|FALSE|0|1)$ ]]; then
     export "$var"="$(normalize_bool "$value")"
   fi
-done
+
+done < <(env)
 
 # -------------------------------
 # Optional validation hook
@@ -129,7 +140,7 @@ if [[ -f "$VALIDATION_SCRIPT" ]]; then
 fi
 
 # -------------------------------
-# Final output (debug-friendly)
+# Final output
 # -------------------------------
 echo "✅ Final platform configuration loaded"
 
