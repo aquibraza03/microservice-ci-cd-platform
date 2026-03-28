@@ -26,10 +26,32 @@ is_boolean() {
 # Validation loop
 # -------------------------------
 
-while IFS='=' read -r var rule; do
+while IFS= read -r line || [[ -n "$line" ]]; do
 
-  # skip comments / empty
-  [[ "$var" =~ ^#.*$ || -z "$var" ]] && continue
+  # Trim
+  line="$(echo "$line" | xargs)"
+
+  # Skip empty or comment
+  [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+  # Ensure valid KEY=VALUE
+  if [[ "$line" != *"="* ]]; then
+    echo "⚠️ Skipping invalid schema line: $line"
+    continue
+  fi
+
+  var="${line%%=*}"
+  rule="${line#*=}"
+
+  # Trim again
+  var="$(echo "$var" | xargs)"
+  rule="$(echo "$rule" | xargs)"
+
+  # Validate variable name (CRITICAL FIX)
+  if [[ ! "$var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "⚠️ Skipping invalid schema key: $var"
+    continue
+  fi
 
   value="${!var:-}"
 
