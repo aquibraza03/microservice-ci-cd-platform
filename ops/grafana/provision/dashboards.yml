@@ -1,0 +1,47 @@
+apiVersion: 1
+
+providers:
+
+  # -------------------------------
+  # Core service dashboards
+  # -------------------------------
+  - name: "services"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+
+    options:
+      path: ${GRAFANA_DASHBOARD_PATH}/services
+
+  # -------------------------------
+  # Platform dashboards (infra)
+  # -------------------------------
+  - name: "platform"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+
+    options:
+      path: ${GRAFANA_DASHBOARD_PATH}/platform
+
+  # -------------------------------
+  # Observability dashboards
+  # -------------------------------
+  - name: "observability"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+
+    options:
+      path: ${GRAFANA_DASHBOARD_PATH}/observability
+
+  # -------------------------------
+  # Environment-specific dashboards
+  # -------------------------------
+  - name: "environment"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+
+    options:
+      path: ${GRAFANA_DASHBOARD_PATH}/${ENV}
