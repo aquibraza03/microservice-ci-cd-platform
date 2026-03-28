@@ -1,43 +1,82 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mkdir -p bin
+echo "🔧 Setting up platform tools..."
 
-# Add ./bin to PATH only if not already present, then refresh hash cache
+BIN_DIR="${BIN_DIR:-bin}"
+TOOLS_FILE="${TOOLS_FILE:-scripts/tools.env}"
+
+mkdir -p "$BIN_DIR"
+
+# Add bin to PATH safely
 case ":$PATH:" in
-  *":$PWD/bin:"*) ;;
-  *) export PATH="$PWD/bin:$PATH" ;;
+  *":$PWD/$BIN_DIR:"*) ;;
+  *) export PATH="$PWD/$BIN_DIR:$PATH" ;;
 esac
 
 hash -r
 
-echo "🔧 Setting up platform tools..."
+# -------------------------------
+# Load tool definitions (NO HARDCODING)
+# -------------------------------
+if [[ ! -f "$TOOLS_FILE" ]]; then
+  echo "⚠️ No tools definition file found ($TOOLS_FILE)"
+  exit 0
+fi
 
-install_if_missing() {
-  local tool="$1"
+# -------------------------------
+# Safe installer
+# -------------------------------
+install_tool() {
+  local name="$1"
   local url="$2"
 
-  if ! command -v "$tool" >/dev/null 2>&1 && ! command -v "$tool.exe" >/dev/null 2>&1; then
-    echo "Installing $tool..."
-    curl -sSfL "$url" | sh -s -- -b ./bin || {
-      echo "❌ Failed installing $tool"
-      exit 1
-    }
+  # Skip if already installed
+  if command -v "$name" >/dev/null 2>&1 || command -v "$name.exe" >/dev/null 2>&1; then
+    echo "✅ $name already installed"
+    return
+  fi
+
+  echo "📦 Installing $name..."
+
+  # Download and install safely
+  if curl -fsSL "$url" | sh -s -- -b "$PWD/$BIN_DIR"; then
+    echo "✅ Installed $name"
   else
-    echo "$tool already installed"
+    echo "❌ Failed to install $name"
+    return 1
   fi
 }
 
-install_if_missing syft "https://raw.githubusercontent.com/anchore/syft/main/install.sh"
-install_if_missing trivy "https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh"
+# -------------------------------
+# Read tools dynamically
+# -------------------------------
+while IFS='=' read -r name url; do
+
+  # Skip comments / empty
+  [[ -z "$name" || "$name" =~ ^# ]] && continue
+
+  install_tool "$name" "$url"
+
+done < "$TOOLS_FILE"
+
+# -------------------------------
+# Show installed tools
+# -------------------------------
+echo ""
+echo "📦 Installed tools:"
+
+for tool in $(cut -d= -f1 "$TOOLS_FILE"); do
+  [[ -z "$tool" || "$tool" =~ ^# ]] && continue
+
+  if command -v "$tool" >/dev/null 2>&1; then
+    version="$($tool --version 2>/dev/null | head -n1 || true)"
+    echo " - $tool ${version:-installed}"
+  fi
+done
 
 echo ""
 echo "✅ Setup complete"
-echo "Tools available:"
-
-if command -v syft >/dev/null 2>&1 || command -v syft.exe >/dev/null 2>&1; then
-  echo " - $(syft version 2>/dev/null | head -n1)"
-fi
 
 if command -v trivy >/dev/null 2>&1 || command -v trivy.exe >/dev/null 2>&1; then
   echo " - $(trivy --version 2>/dev/null | head -n1)"
