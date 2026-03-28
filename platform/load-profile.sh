@@ -123,7 +123,7 @@ while IFS='=' read -r var _; do
 
   value="${!var:-}"
 
-  if [[ "$value" =~ ^(true|false|TRUE|FALSE|0|1)$ ]]; then
+  if [[ "$value" =~ ^(true|false|TRUE|FALSE)$ ]]; then
     export "$var"="$(normalize_bool "$value")"
   fi
 
