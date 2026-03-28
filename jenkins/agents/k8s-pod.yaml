@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: ci-agent
+spec:
+  serviceAccountName: jenkins
+
+  containers:
+    - name: runner
+      image: ${CI_AGENT_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command:
+        - cat
+      tty: true
+      resources:
+        requests:
+          cpu: "${CI_CPU_REQUEST}"
+          memory: "${CI_MEMORY_REQUEST}"
+        limits:
+          cpu: "${CI_CPU_LIMIT}"
+          memory: "${CI_MEMORY_LIMIT}"
+      env:
+        - name: DOCKER_BUILDKIT
+          value: "1"
+        - name: CI
+          value: "true"
+
+    - name: docker
+      image: ${DOCKER_IMAGE}
+      command:
+        - dockerd-entrypoint.sh
+      securityContext:
+        privileged: true
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+
+  imagePullSecrets:
+    - name: ${IMAGE_PULL_SECRET}
+
+  restartPolicy: Never
