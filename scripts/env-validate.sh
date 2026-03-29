@@ -82,7 +82,7 @@ done < "$ENV_FILE"
 pass "Parsed environment"
 
 # -------------------------------
-# Schema validation (FIXED)
+# Schema validation
 # -------------------------------
 declare -A SCHEMA_VARS
 
@@ -99,9 +99,7 @@ if [[ -f "$SCHEMA_FILE" ]]; then
 
     SCHEMA_VARS["$var"]=1
 
-    # -------------------------------
-    # NEW PARSER (correct)
-    # -------------------------------
+    # Parse schema
     IFS=':' read -r type required min max default <<< "$rule"
 
     min="${min:-}"
@@ -110,8 +108,11 @@ if [[ -f "$SCHEMA_FILE" ]]; then
 
     value="${ENV_VARS[$var]:-}"
 
-    # Required
-    [[ "$required" == "true" && -z "$value" ]] && { fail "$var required"; continue; }
+    # Required check
+    if [[ "$required" == "true" && -z "$value" ]]; then
+      fail "$var required"
+      continue
+    fi
 
     [[ -z "$value" ]] && continue
 
@@ -120,13 +121,22 @@ if [[ -f "$SCHEMA_FILE" ]]; then
     # -------------------------------
     case "$type" in
       number)
-        [[ "$value" =~ ^[0-9]+$ ]] || warn "$var should be number"
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+          warn "$var should be number"
+          continue
+        fi
         ;;
       boolean)
         [[ "$value" =~ ^(true|false)$ ]] || warn "$var should be boolean"
         ;;
       port)
-        [[ "$value" =~ ^[0-9]+$ && "$value" -ge 1 && "$value" -le 65535 ]] || warn "$var invalid port"
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+          warn "$var invalid port"
+          continue
+        fi
+        if (( value < 1 || value > 65535 )); then
+          warn "$var out of valid port range"
+        fi
         ;;
       string|"")
         ;;
@@ -136,14 +146,16 @@ if [[ -f "$SCHEMA_FILE" ]]; then
     esac
 
     # -------------------------------
-    # Range validation (NEW)
+    # Range validation
     # -------------------------------
     if [[ "$type" == "number" || "$type" == "port" ]]; then
-      if [[ -n "$min" && "$value" -lt "$min" ]]; then
-        warn "$var below minimum ($min)"
-      fi
-      if [[ -n "$max" && "$value" -gt "$max" ]]; then
-        warn "$var above maximum ($max)"
+      if [[ "$value" =~ ^[0-9]+$ ]]; then
+        if [[ -n "$min" && "$value" -lt "$min" ]]; then
+          warn "$var below minimum ($min)"
+        fi
+        if [[ -n "$max" && "$value" -gt "$max" ]]; then
+          warn "$var above maximum ($max)"
+        fi
       fi
     fi
 
@@ -167,6 +179,22 @@ for k in "${!ENV_VARS[@]}"; do
 done
 
 # -------------------------------
+# .env.example validation
+# -------------------------------
+if [[ -f "$EXAMPLE_FILE" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line//$'\r'/}"
+    line="$(trim "$line")"
+
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+    key="$(trim "${line%%=*}")"
+    [[ -z "${ENV_VARS[$key]:-}" ]] && warn "$key missing (from example)"
+
+  done < "$EXAMPLE_FILE"
+fi
+
+# -------------------------------
 # Output
 # -------------------------------
 if [[ "$OUTPUT_FORMAT" == "text" ]]; then
@@ -174,13 +202,17 @@ if [[ "$OUTPUT_FORMAT" == "text" ]]; then
   echo "📊 Summary:"
   echo " - Failures: $FAILURES"
   echo " - Warnings: $WARNINGS"
+
+  if [[ "$FAILURES" -eq 0 && "$WARNINGS" -eq 0 ]]; then
+    echo "✅ Environment is valid"
+  fi
 fi
 
 # -------------------------------
 # Strict mode
 # -------------------------------
 if [[ "$STRICT" == "true" && "$WARNINGS" -gt 0 ]]; then
-  [[ "$OUTPUT_FORMAT" == "text" ]] && echo "❌ Warnings treated as failures"
+  echo "❌ Warnings treated as failures"
   exit 1
 fi
 
