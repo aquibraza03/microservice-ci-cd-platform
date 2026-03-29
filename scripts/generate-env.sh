@@ -15,7 +15,7 @@ VERBOSE="${VERBOSE:-true}"
 # -------------------------------
 # Logging
 # -------------------------------
-log()  { [[ "$VERBOSE" == "true" ]] && echo "ℹ️  $1"; }
+log()  { [[ "$VERBOSE" == "true" ]] && echo "ℹ️  $1" >&2; }
 pass() { echo "✅ $1"; }
 fail() { echo "❌ $1"; exit 1; }
 
