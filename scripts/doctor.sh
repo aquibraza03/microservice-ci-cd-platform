@@ -45,7 +45,9 @@ for dir in ci platform scripts services; do
   [[ -d "$dir" ]] && pass "$dir directory" || fail "$dir directory missing"
 done
 
-[[ -d "platform/defaults" ]] && pass "platform defaults" || warn "platform defaults missing"
+# ✅ FIXED HERE
+[[ -f "platform/defaults.env" ]] && pass "platform defaults" || warn "platform defaults missing"
+
 [[ -d "platform/profiles" ]] && pass "platform profiles" || warn "platform profiles missing"
 
 # -------------------------------
@@ -73,7 +75,7 @@ else
 fi
 
 # -------------------------------
-# Environment (FIXED)
+# Environment
 # -------------------------------
 echo ""
 echo "🌍 Checking environment..."
