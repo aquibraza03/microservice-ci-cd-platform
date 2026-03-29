@@ -15,6 +15,7 @@ ENV_DIR="${DEPLOY_DIR}/environments"
 PROVIDERS_DIR="${DEPLOY_DIR}/providers"
 
 CI_BUILD_ID="${CI_BUILD_ID:-${GITHUB_RUN_ID:-${BUILD_NUMBER:-local}}}"
+DRY_RUN="${DRY_RUN:-false}"
 
 ############################################
 # Helpers
@@ -45,13 +46,21 @@ require_file() {
 # Validation
 ############################################
 
-require_dir "${SERVICES_DIR}/${SERVICE}" "Service directory not found: ${SERVICES_DIR}/${SERVICE}"
+require_dir "$SERVICES_DIR" "Services directory missing: $SERVICES_DIR"
+
+# Better service validation
+if [[ ! -d "${SERVICES_DIR}/${SERVICE}" ]]; then
+  echo "❌ Service not found: $SERVICE"
+  echo "Available services:"
+  ls "$SERVICES_DIR"
+  exit 1
+fi
+
 require_dir "$DEPLOY_DIR" "Deploy directory not found: $DEPLOY_DIR"
 require_dir "$ENV_DIR" "Environment directory missing: $ENV_DIR"
 require_dir "$PROVIDERS_DIR" "Providers directory missing: $PROVIDERS_DIR"
 
 ENV_FILE="${ENV_DIR}/${ENVIRONMENT}.env"
-
 require_file "$ENV_FILE" "Environment config not found: $ENV_FILE"
 
 ############################################
@@ -64,6 +73,10 @@ set -o allexport
 source "$ENV_FILE"
 set +o allexport
 
+log "Environment loaded"
+log "Provider: $PROVIDER"
+log "Service: $SERVICE"
+
 ############################################
 # Resolve Provider
 ############################################
@@ -71,7 +84,19 @@ set +o allexport
 SCRIPT="${PROVIDERS_DIR}/${PROVIDER}.sh"
 
 if [[ ! -f "$SCRIPT" ]]; then
-  fail "Unknown provider: $PROVIDER (expected script: $SCRIPT)"
+  echo "❌ Unknown provider: $PROVIDER"
+  echo "Available providers:"
+  ls "$PROVIDERS_DIR" | sed 's/.sh$//'
+  exit 1
+fi
+
+############################################
+# Dry Run Mode
+############################################
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  log "🧪 Dry-run mode (no real deployment)"
+  exit 0
 fi
 
 ############################################
