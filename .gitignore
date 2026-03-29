@@ -4,3 +4,16 @@ bin/trivy.exe
 .env.local
 # Generated env files
 environments/*/env.example
+# Build artifacts
+artifacts/
+
+# binaries
+bin/
+*.exe
+
+# local build output
+main
+
+# node
+node_modules/
+package-lock.json
