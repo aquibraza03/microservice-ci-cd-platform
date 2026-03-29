@@ -21,9 +21,22 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 
 # Check if Trivy exists
-if ! command -v trivy >/dev/null 2>&1; then
-  echo "⚠️ Trivy not installed. Run scripts/setup.sh"
-  exit 0
+# -------------------------------
+# Resolve trivy (no hardcoding)
+# -------------------------------
+TRIVY_BIN=""
+
+if command -v trivy >/dev/null 2>&1; then
+  TRIVY_BIN="$(command -v trivy)"
+elif command -v trivy.exe >/dev/null 2>&1; then
+  TRIVY_BIN="$(command -v trivy.exe)"
+elif command -v where >/dev/null 2>&1; then
+  TRIVY_BIN="$(where trivy 2>/dev/null | head -n 1 | tr -d '\r')"
+fi
+
+if [[ -z "$TRIVY_BIN" ]]; then
+  echo "⚠️ Trivy not installed. Run ./scripts/setup.sh"
+  exit 1
 fi
 
 # Run vulnerability scan
