@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-.env}"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+ENV_FILE="${ENV_FILE:-environments/$ENVIRONMENT/env.example}"
 SCHEMA_FILE="${SCHEMA_FILE:-.env.schema}"
 EXAMPLE_FILE="${EXAMPLE_FILE:-.env.example}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"   # text | json
