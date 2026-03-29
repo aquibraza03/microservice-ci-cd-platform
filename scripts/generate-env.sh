@@ -1,29 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# -------------------------------
-# Config (NO HARDCODING)
-# -------------------------------
 SCHEMA_FILE="${SCHEMA_FILE:-platform/schema.env}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 OUTPUT_DIR="${OUTPUT_DIR:-environments/$ENVIRONMENT}"
 OUTPUT_FILE="${OUTPUT_FILE:-$OUTPUT_DIR/env.example}"
 
-OVERWRITE="${OVERWRITE:-true}"   # true | false
+OVERWRITE="${OVERWRITE:-true}"
 VERBOSE="${VERBOSE:-true}"
 
-# -------------------------------
-# Logging
-# -------------------------------
 log()  { [[ "$VERBOSE" == "true" ]] && echo "ℹ️  $1" >&2; }
 pass() { echo "✅ $1"; }
 fail() { echo "❌ $1"; exit 1; }
 
-# -------------------------------
-# Validate schema
-# -------------------------------
 [[ -f "$SCHEMA_FILE" ]] || fail "Schema file not found: $SCHEMA_FILE"
-
 mkdir -p "$OUTPUT_DIR"
 
 if [[ -f "$OUTPUT_FILE" && "$OVERWRITE" != "true" ]]; then
@@ -34,9 +24,6 @@ log "Generating env file"
 log "Schema: $SCHEMA_FILE"
 log "Output: $OUTPUT_FILE"
 
-# -------------------------------
-# Helpers
-# -------------------------------
 trim() {
   local v="$1"
   v="${v#"${v%%[![:space:]]*}"}"
@@ -44,9 +31,6 @@ trim() {
   printf "%s" "$v"
 }
 
-# -------------------------------
-# Generate
-# -------------------------------
 TMP_FILE="$(mktemp "${OUTPUT_FILE}.XXXX")"
 
 {
@@ -62,13 +46,10 @@ TMP_FILE="$(mktemp "${OUTPUT_FILE}.XXXX")"
     line="${line//$'\r'/}"
     line="$(trim "$line")"
 
-    # Skip empty
     [[ -z "$line" ]] && continue
 
-    # Section support (## Section Name)
     if [[ "$line" =~ ^## ]]; then
       section="${line#\#\# }"
-
       if [[ "$section" != "$current_section" ]]; then
         echo ""
         echo "# =================================="
@@ -80,32 +61,27 @@ TMP_FILE="$(mktemp "${OUTPUT_FILE}.XXXX")"
       continue
     fi
 
-    # Skip comments
     [[ "$line" =~ ^# ]] && continue
     [[ "$line" != *=* ]] && continue
 
     var="$(trim "${line%%=*}")"
     rule="$(trim "${line#*=}")"
 
-    # Parse schema safely
-    IFS=':' read -r type required allowed regex default extra <<< "${rule}:::::"
+    IFS=':' read -r type required min max default <<< "$rule"
 
-    # Detect malformed schema
-    if [[ -n "${extra:-}" ]]; then
-      log "Skipping invalid schema line: $line"
-      continue
-    fi
+    min="${min:-}"
+    max="${max:-}"
+    default="${default:-}"
 
     echo "# ----------------------------------"
     echo "# $var"
 
     [[ -n "$type" ]] && echo "# type: $type"
     [[ "$required" == "true" ]] && echo "# required"
+    [[ -n "$min" ]] && echo "# min: $min"
+    [[ -n "$max" ]] && echo "# max: $max"
 
-    [[ -n "${allowed:-}" ]] && echo "# allowed: $allowed"
-    [[ -n "${regex:-}" ]] && echo "# pattern: $regex"
-
-    if [[ -n "${default:-}" ]]; then
+    if [[ -n "$default" ]]; then
       echo "# default: $default"
       echo "$var=$default"
     else
@@ -118,9 +94,5 @@ TMP_FILE="$(mktemp "${OUTPUT_FILE}.XXXX")"
 
 } > "$TMP_FILE"
 
-# -------------------------------
-# Atomic write
-# -------------------------------
 mv "$TMP_FILE" "$OUTPUT_FILE"
-
 pass "Generated: $OUTPUT_FILE"
