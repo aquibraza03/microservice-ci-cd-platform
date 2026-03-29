@@ -2,3 +2,5 @@ trivy/
 bin/trivy.exe
 *.zip
 .env.local
+# Generated env files
+environments/*/env.example
