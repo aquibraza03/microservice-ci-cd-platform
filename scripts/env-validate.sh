@@ -3,7 +3,7 @@ set -euo pipefail
 
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 ENV_FILE="${ENV_FILE:-environments/$ENVIRONMENT/env.example}"
-SCHEMA_FILE="${SCHEMA_FILE:-.env.schema}"
+SCHEMA_FILE="${SCHEMA_FILE:-platform/schema.env}"
 EXAMPLE_FILE="${EXAMPLE_FILE:-.env.example}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"   # text | json
 STRICT="${STRICT:-false}"
