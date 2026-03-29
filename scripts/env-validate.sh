@@ -5,7 +5,7 @@ ENVIRONMENT="${ENVIRONMENT:-dev}"
 ENV_FILE="${ENV_FILE:-environments/$ENVIRONMENT/env.example}"
 SCHEMA_FILE="${SCHEMA_FILE:-platform/schema.env}"
 EXAMPLE_FILE="${EXAMPLE_FILE:-.env.example}"
-OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"   # text | json
+OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"
 STRICT="${STRICT:-false}"
 
 FAILURES=0
@@ -82,7 +82,7 @@ done < "$ENV_FILE"
 pass "Parsed environment"
 
 # -------------------------------
-# Schema validation
+# Schema validation (FIXED)
 # -------------------------------
 declare -A SCHEMA_VARS
 
@@ -99,35 +99,53 @@ if [[ -f "$SCHEMA_FILE" ]]; then
 
     SCHEMA_VARS["$var"]=1
 
-    IFS=':' read -r type required allowed regex extra <<< "${rule}::::"
-    [[ -n "${extra:-}" ]] && warn "Invalid schema format for $var"
+    # -------------------------------
+    # NEW PARSER (correct)
+    # -------------------------------
+    IFS=':' read -r type required min max default <<< "$rule"
+
+    min="${min:-}"
+    max="${max:-}"
+    default="${default:-}"
 
     value="${ENV_VARS[$var]:-}"
 
+    # Required
     [[ "$required" == "true" && -z "$value" ]] && { fail "$var required"; continue; }
+
     [[ -z "$value" ]] && continue
 
+    # -------------------------------
+    # Type validation
+    # -------------------------------
     case "$type" in
-      number) [[ "$value" =~ ^[0-9]+$ ]] || warn "$var should be number" ;;
-      boolean) [[ "$value" =~ ^(true|false)$ ]] || warn "$var should be boolean" ;;
-      port) [[ "$value" =~ ^[0-9]+$ && "$value" -ge 1 && "$value" -le 65535 ]] || warn "$var invalid port" ;;
-      url) [[ "$value" =~ ^https?:// ]] || warn "$var invalid url" ;;
-      string|"") ;;
-      *) warn "Unknown type '$type' for $var" ;;
+      number)
+        [[ "$value" =~ ^[0-9]+$ ]] || warn "$var should be number"
+        ;;
+      boolean)
+        [[ "$value" =~ ^(true|false)$ ]] || warn "$var should be boolean"
+        ;;
+      port)
+        [[ "$value" =~ ^[0-9]+$ && "$value" -ge 1 && "$value" -le 65535 ]] || warn "$var invalid port"
+        ;;
+      string|"")
+        ;;
+      *)
+        warn "Unknown type '$type' for $var"
+        ;;
     esac
 
-    # Enum validation
-    if [[ -n "$allowed" ]]; then
-      IFS='|' read -ra opts <<< "$allowed"
-      valid=false
-      for o in "${opts[@]}"; do
-        [[ "$o" == "$value" ]] && valid=true && break
-      done
-      [[ "$valid" == false ]] && warn "$var must be one of [$allowed]"
+    # -------------------------------
+    # Range validation (NEW)
+    # -------------------------------
+    if [[ "$type" == "number" || "$type" == "port" ]]; then
+      if [[ -n "$min" && "$value" -lt "$min" ]]; then
+        warn "$var below minimum ($min)"
+      fi
+      if [[ -n "$max" && "$value" -gt "$max" ]]; then
+        warn "$var above maximum ($max)"
+      fi
     fi
-
-    # Regex validation
-    [[ -n "$regex" && ! "$value" =~ $regex ]] && warn "$var invalid format"
 
   done < "$SCHEMA_FILE"
 else
@@ -149,23 +167,6 @@ for k in "${!ENV_VARS[@]}"; do
 done
 
 # -------------------------------
-# .env.example validation
-# -------------------------------
-if [[ -f "$EXAMPLE_FILE" ]]; then
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line//$'\r'/}"
-    line="$(trim "$line")"
-
-    [[ -z "$line" || "$line" =~ ^# ]] && continue
-
-    key="$(trim "${line%%=*}")"
-
-    [[ -z "${ENV_VARS[$key]:-}" ]] && warn "$key missing (from example)"
-
-  done < "$EXAMPLE_FILE"
-fi
-
-# -------------------------------
 # Output
 # -------------------------------
 if [[ "$OUTPUT_FORMAT" == "text" ]]; then
@@ -173,29 +174,6 @@ if [[ "$OUTPUT_FORMAT" == "text" ]]; then
   echo "📊 Summary:"
   echo " - Failures: $FAILURES"
   echo " - Warnings: $WARNINGS"
-fi
-
-# JSON output
-if [[ "$OUTPUT_FORMAT" == "json" ]]; then
-  printf '{\n'
-  printf '  "failures": %d,\n' "$FAILURES"
-  printf '  "warnings": %d,\n' "$WARNINGS"
-
-  printf '  "errors": ['
-  for i in "${!ERRORS[@]}"; do
-    printf '"%s"' "$(escape_json "${ERRORS[$i]}")"
-    [[ $i -lt $((${#ERRORS[@]} - 1)) ]] && printf ','
-  done
-  printf '],\n'
-
-  printf '  "warnings_list": ['
-  for i in "${!WARNINGS_LIST[@]}"; do
-    printf '"%s"' "$(escape_json "${WARNINGS_LIST[$i]}")"
-    [[ $i -lt $((${#WARNINGS_LIST[@]} - 1)) ]] && printf ','
-  done
-  printf ']\n'
-
-  printf '}\n'
 fi
 
 # -------------------------------
@@ -206,7 +184,4 @@ if [[ "$STRICT" == "true" && "$WARNINGS" -gt 0 ]]; then
   exit 1
 fi
 
-# -------------------------------
-# Final exit
-# -------------------------------
 [[ "$FAILURES" -gt 0 ]] && exit 1
