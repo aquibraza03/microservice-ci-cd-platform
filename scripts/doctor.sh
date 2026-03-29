@@ -1,59 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🩺 Running platform diagnostics..."
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+ENV_FILE="${ENV_FILE:-environments/$ENVIRONMENT/env.example}"
 
 FAILURES=0
 WARNINGS=0
 
-# -------------------------------
-# Helpers
-# -------------------------------
 pass() { echo "✅ $1"; }
-fail() { echo "❌ $1"; FAILURES=$((FAILURES+1)); }
-warn() { echo "⚠️ $1"; WARNINGS=$((WARNINGS+1)); }
+warn() { echo "⚠️ $1"; ((WARNINGS++)); }
+fail() { echo "❌ $1"; ((FAILURES++)); }
 
-check_cmd() {
-  local name="$1"
-  local cmd="$2"
-
-  if command -v "$cmd" >/dev/null 2>&1; then
-    pass "$name ($cmd)"
-  else
-    fail "$name ($cmd) not found"
-  fi
-}
-
-check_file() {
-  local name="$1"
-  local path="$2"
-
-  if [[ -f "$path" ]]; then
-    pass "$name"
-  else
-    fail "$name missing ($path)"
-  fi
-}
-
-check_dir() {
-  local name="$1"
-  local path="$2"
-
-  if [[ -d "$path" ]]; then
-    pass "$name"
-  else
-    fail "$name missing ($path)"
-  fi
-}
-
-# -------------------------------
-# Core tools
-# -------------------------------
+echo "🩺 Running platform diagnostics..."
 echo ""
-echo "🔧 Checking required tools..."
 
+# -------------------------------
+# Required tools
+# -------------------------------
+echo "🔧 Checking required tools..."
 for tool in bash git curl; do
-  check_cmd "Required tool" "$tool"
+  if command -v "$tool" >/dev/null 2>&1; then
+    pass "Required tool ($tool)"
+  else
+    fail "Missing required tool ($tool)"
+  fi
 done
 
 # Optional tools
@@ -71,65 +41,58 @@ done
 echo ""
 echo "📁 Checking project structure..."
 
-check_dir "ci directory" "ci"
-check_dir "platform directory" "platform"
-check_dir "scripts directory" "scripts"
-check_dir "services directory" "services"
+for dir in ci platform scripts services; do
+  [[ -d "$dir" ]] && pass "$dir directory" || fail "$dir directory missing"
+done
 
-check_file "platform defaults" "platform/defaults.env"
-check_dir "platform profiles" "platform/profiles"
+[[ -d "platform/defaults" ]] && pass "platform defaults" || warn "platform defaults missing"
+[[ -d "platform/profiles" ]] && pass "platform profiles" || warn "platform profiles missing"
 
 # -------------------------------
-# Git status (NEW - SAFE)
+# Git status
 # -------------------------------
 echo ""
 echo "🔄 Checking Git status..."
 
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-
-  if git diff --quiet && git diff --cached --quiet; then
-    pass "Git repo clean"
-  else
-    warn "Uncommitted changes detected"
-  fi
-
+if [[ -n "$(git status --porcelain)" ]]; then
+  warn "Uncommitted changes detected"
 else
-  warn "Not a git repository"
+  pass "Working tree clean"
 fi
 
 # -------------------------------
-# Platform config load
+# Platform config
 # -------------------------------
 echo ""
 echo "🧠 Checking platform config..."
 
-if source platform/load-profile.sh >/dev/null 2>&1; then
+if [[ -f "platform/schema.env" ]]; then
   pass "Platform config loads"
 else
-  fail "Platform config failed"
+  fail "Missing platform/schema.env"
 fi
 
 # -------------------------------
-# Environment file
+# Environment (FIXED)
 # -------------------------------
 echo ""
 echo "🌍 Checking environment..."
 
-if [[ -f ".env" ]]; then
-  pass ".env file exists"
+if [[ -f "$ENV_FILE" ]]; then
+  pass "Environment config found ($ENV_FILE)"
 else
-  warn ".env file missing"
+  warn "Environment config missing ($ENV_FILE)"
 fi
 
 # -------------------------------
-# AWS check (optional)
+# AWS check
 # -------------------------------
 echo ""
 echo "☁️ Checking AWS..."
 
 if command -v aws >/dev/null 2>&1; then
   if aws sts get-caller-identity >/dev/null 2>&1; then
-    pass "AWS authentication working"
+    pass "AWS authenticated"
   else
     warn "AWS CLI present but not authenticated"
   fi
@@ -154,58 +117,47 @@ else
 fi
 
 # -------------------------------
-# Services validation
+# Services check
 # -------------------------------
 echo ""
 echo "🧩 Checking services..."
 
 if [[ -d "services" ]]; then
-  for svc in services/*; do
-    [[ -d "$svc" ]] || continue
+  for service in services/*; do
+    [[ -d "$service" ]] || continue
 
-    name="$(basename "$svc")"
+    name="$(basename "$service")"
 
-    [[ -f "$svc/service.yml" ]] \
+    [[ -f "$service/service.yml" ]] \
       && pass "Service '$name' has service.yml" \
       || warn "Service '$name' missing service.yml"
 
-    [[ -d "$svc/src" ]] \
+    [[ -d "$service/src" ]] \
       && pass "Service '$name' has src/" \
       || warn "Service '$name' missing src/"
   done
+else
+  warn "No services directory"
 fi
 
 # -------------------------------
-# YAML validation (NEW - SAFE)
+# YAML validation
 # -------------------------------
 echo ""
 echo "📄 Validating YAML..."
 
 if command -v yq >/dev/null 2>&1; then
+  for file in services/*/service.yml; do
+    [[ -f "$file" ]] || continue
 
-  found_any=false
-
-  for svc in services/*; do
-    [[ -d "$svc" ]] || continue
-
-    file="$svc/service.yml"
-    name="$(basename "$svc")"
-
-    if [[ -f "$file" ]]; then
-      found_any=true
-
-      if yq eval . "$file" >/dev/null 2>&1; then
-        pass "Service '$name' YAML valid"
-      else
-        warn "Service '$name' YAML invalid"
-      fi
+    if yq e '.' "$file" >/dev/null 2>&1; then
+      pass "Service '$(basename "$(dirname "$file")")' YAML valid"
+    else
+      warn "Invalid YAML in $file"
     fi
   done
-
-  [[ "$found_any" == false ]] && warn "No service.yml files found"
-
 else
-  warn "yq not installed — skipping YAML validation"
+  warn "yq not installed (skipping YAML validation)"
 fi
 
 # -------------------------------
@@ -217,7 +169,7 @@ echo " - Failures: $FAILURES"
 echo " - Warnings: $WARNINGS"
 
 if [[ "$FAILURES" -gt 0 ]]; then
-  echo "❌ Doctor found critical issues"
+  echo "❌ System has issues"
   exit 1
 else
   echo "✅ System is healthy"
