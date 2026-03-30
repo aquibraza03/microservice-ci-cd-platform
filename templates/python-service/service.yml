@@ -1,0 +1,38 @@
+name: {{SERVICE_NAME}}
+
+runtime:
+  language: python
+  entrypoint: src/app.py
+
+network:
+  port: ${SERVICE_PORT}
+  health: ${SERVICE_HEALTH_PATH}
+  readiness: ${SERVICE_READY_PATH}
+
+resources:
+  cpu: ${CPU}
+  memory: ${MEMORY}
+
+scaling:
+  enabled: ${AUTOSCALE_ENABLED}
+  min_replicas: ${AUTOSCALE_MIN_REPLICAS}
+  max_replicas: ${AUTOSCALE_MAX_REPLICAS}
+  cpu_threshold: ${AUTOSCALE_CPU_THRESHOLD}
+
+deployment:
+  strategy: ${DEPLOYMENT_STRATEGY}
+  max_unavailable: ${MAX_UNAVAILABLE}
+  max_surge: ${MAX_SURGE}
+
+observability:
+  logs: ${LOG_LEVEL}
+  metrics: ${METRICS_ENABLED}
+  tracing: ${TRACING_ENABLED}
+
+security:
+  read_only_fs: ${READ_ONLY_ROOT_FS}
+  security_context: ${SECURITY_CONTEXT_ENABLED}
+
+metadata:
+  profile: ${PLATFORM_PROFILE}
+  version: ${PLATFORM_VERSION}
