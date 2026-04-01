@@ -1,34 +1,40 @@
-variable "name" {
-  description = "ECR repository name"
-  type        = string
+resource "aws_ecr_repository" "this" {
+  name         = var.name
+  force_delete = var.force_delete
+
+  image_scanning_configuration {
+    scan_on_push = var.scan_on_push
+  }
+
+  encryption_configuration {
+    encryption_type = var.encryption_type
+  }
+
+  tags = var.tags
 }
 
-variable "scan_on_push" {
-  description = "Enable image scanning"
-  type        = bool
-  default     = true
-}
+# -------------------------------
+# Optional lifecycle policy
+# -------------------------------
+resource "aws_ecr_lifecycle_policy" "this" {
+  count = var.enable_lifecycle_policy ? 1 : 0
 
-variable "tags" {
-  description = "Tags for the ECR repository"
-  type        = map(string)
-  default     = {}
-}
+  repository = aws_ecr_repository.this.name
 
-variable "encryption_type" {
-  description = "Encryption type (AES256 or KMS)"
-  type        = string
-  default     = "AES256"
-}
-
-variable "enable_lifecycle_policy" {
-  description = "Enable lifecycle policy for images"
-  type        = bool
-  default     = true
-}
-
-variable "force_delete" {
-  description = "Allow force deletion of repository"
-  type        = bool
-  default     = false
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Lifecycle policy"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.lifecycle_max_images
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
 }
