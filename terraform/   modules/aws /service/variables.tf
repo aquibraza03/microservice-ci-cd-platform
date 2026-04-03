@@ -1,3 +1,6 @@
+# -----------------------------
+# Core Service Identity
+# -----------------------------
 variable "project" {
   description = "Project name"
   type        = string
@@ -93,7 +96,7 @@ variable "max_count" {
   }
 }
 
-# Ensure desired_count is within bounds
+# Cross-validation (important)
 variable "scaling_sanity_check" {
   description = "Internal validation for scaling consistency"
   type        = bool
@@ -142,6 +145,78 @@ variable "load_balancer" {
       var.load_balancer.container_port <= 65535
     )
     error_message = "Invalid load balancer configuration."
+  }
+}
+
+# -----------------------------
+# Execution Role (REQUIRED FOR ECR + LOGS)
+# -----------------------------
+variable "execution_role_arn" {
+  description = "IAM role ARN used by ECS tasks for pulling images and writing logs"
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:.*:iam::.*:role/.*", var.execution_role_arn))
+    error_message = "execution_role_arn must be a valid IAM role ARN."
+  }
+}
+
+# -----------------------------
+# Logging (CloudWatch)
+# -----------------------------
+variable "enable_logging" {
+  description = "Enable CloudWatch logging"
+  type        = bool
+  default     = true
+}
+
+variable "log_retention_days" {
+  description = "Log retention period"
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.log_retention_days >= 1 && var.log_retention_days <= 3650
+    error_message = "log_retention_days must be between 1 and 3650."
+  }
+}
+
+# -----------------------------
+# Health Check (OPTIONAL)
+# -----------------------------
+variable "health_check" {
+  description = "Container health check configuration"
+  type = object({
+    command      = list(string)
+    interval     = number
+    timeout      = number
+    retries      = number
+    start_period = number
+  })
+  default = null
+
+  validation {
+    condition = var.health_check == null || (
+      length(var.health_check.command) > 0 &&
+      var.health_check.interval >= 5 &&
+      var.health_check.timeout >= 2 &&
+      var.health_check.retries >= 1
+    )
+    error_message = "Invalid health_check configuration."
+  }
+}
+
+# -----------------------------
+# Autoscaling Tuning
+# -----------------------------
+variable "cpu_target_utilization" {
+  description = "Target CPU utilization percentage for autoscaling"
+  type        = number
+  default     = 70
+
+  validation {
+    condition     = var.cpu_target_utilization > 0 && var.cpu_target_utilization <= 100
+    error_message = "cpu_target_utilization must be between 1 and 100."
   }
 }
 
