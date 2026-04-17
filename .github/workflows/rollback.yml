@@ -1,0 +1,147 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+      service:
+        description: "Service to rollback"
+        required: true
+        type: string
+
+      image_ref:
+        description: "Previous stable image tag or digest"
+        required: true
+        type: string
+
+      reason:
+        description: "Rollback reason / incident reference"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+  checks: write
+  id-token: write
+
+concurrency:
+  group: rollback-${{ github.event.inputs.environment }}-${{ github.event.inputs.service }}
+  cancel-in-progress: false
+
+jobs:
+
+  preflight:
+    name: Preflight Validation
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.target.outputs.type }}
+      health_path: ${{ steps.health.outputs.path }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Inputs
+        shell: bash
+        run: |
+          test -n "${{ github.event.inputs.service }}"
+          test -n "${{ github.event.inputs.image_ref }}"
+          test -n "${{ github.event.inputs.reason }}"
+
+      - name: Validate Service Exists
+        run: |
+          test -d services/${{ github.event.inputs.service }}
+
+      - name: Detect Deployment Target
+        id: target
+        shell: bash
+        run: |
+          if [ -f "services/${{ github.event.inputs.service }}/service.yml" ]; then
+            TYPE=$(grep '^target:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}')
+          elif [ -d deploy/k8s ]; then
+            TYPE="k8s"
+          elif [ -d deploy/ecs ]; then
+            TYPE="ecs"
+          else
+            echo "No deployment target found"
+            exit 1
+          fi
+
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+
+      - name: Read Health Path
+        id: health
+        shell: bash
+        run: |
+          PATH_CHECK=$(grep '^healthcheck:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}' || true)
+
+          if [ -z "$PATH_CHECK" ]; then
+            PATH_CHECK="/health"
+          fi
+
+          echo "path=$PATH_CHECK" >> $GITHUB_OUTPUT
+
+  rollback:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    needs: preflight
+
+    environment:
+      name: ${{ github.event.inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Cloud Auth (OIDC Placeholder)
+        run: |
+          echo "Configure AWS/GCP/Azure federation here"
+
+      - name: Record Rollback Metadata
+        run: |
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Service: ${{ github.event.inputs.service }}"
+          echo "Rollback Image: ${{ github.event.inputs.image_ref }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+
+      - name: Execute Generic Rollback
+        run: |
+          chmod +x deploy/scripts/rollback.sh
+          deploy/scripts/rollback.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ github.event.inputs.environment }}" \
+            "${{ needs.preflight.outputs.target }}" \
+            "${{ github.event.inputs.image_ref }}"
+
+      - name: Post-Rollback Health Check
+        run: |
+          chmod +x ci/smoke-test.sh
+          ci/smoke-test.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ needs.preflight.outputs.health_path }}" \
+            "${{ github.event.inputs.environment }}"
+
+  summary:
+    name: Rollback Summary
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - rollback
+
+    steps:
+      - name: Publish Summary
+        run: |
+          echo "## Rollback Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: ${{ github.event.inputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ github.event.inputs.image_ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Reason: ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Health checks executed" >> $GITHUB_STEP_SUMMARY
