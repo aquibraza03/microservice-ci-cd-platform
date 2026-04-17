@@ -1,0 +1,207 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - "terraform/**"
+      - "environments/**"
+      - ".github/workflows/terraform-plan.yml"
+
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "terraform/**"
+      - "environments/**"
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.9.7"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+
+  detect-environments:
+    name: Detect Environments
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Matrix
+        id: matrix
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'matrix=["${{ github.event.inputs.environment }}"]' >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          test -d environments
+
+          ENVS=$(find environments -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+
+          if [ -z "$ENVS" ]; then
+            echo "No environments found"
+            exit 1
+          fi
+
+          JSON=$(printf '%s\n' "$ENVS" | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$JSON" >> $GITHUB_OUTPUT
+
+  terraform-plan:
+    name: Plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: detect-environments
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.detect-environments.outputs.matrix) }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Terraform Format Check
+        run: terraform fmt -recursive -check
+
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint environments/${{ matrix.environment }}
+
+      - name: Configure Cloud Auth (OIDC Placeholder)
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Configure AWS/GCP/Azure federation here"
+
+      - name: Terraform Init (PR Safe)
+        if: github.event_name == 'pull_request'
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            init \
+            -backend=false
+
+      - name: Terraform Init (Remote Backend)
+        if: github.event_name != 'pull_request'
+        run: |
+          test -f environments/${{ matrix.environment }}/backend.hcl
+
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            init \
+            -backend-config=backend.hcl
+
+      - name: Terraform Validate
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            validate
+
+      - name: Terraform Plan
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            plan \
+            -var-file=terraform.tfvars \
+            -out=tfplan
+
+      - name: Export Plan Text
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            show -no-color tfplan > plan.txt
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: |
+            environments/${{ matrix.environment }}/tfplan
+            environments/${{ matrix.environment }}/plan.txt
+          retention-days: 14
+
+  summary:
+    name: Terraform Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - terraform-plan
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Build Summary
+        shell: bash
+        run: |
+          echo "## Terraform Plan Results" >> $GITHUB_STEP_SUMMARY
+
+          find artifacts -name plan.txt | while read file; do
+            ENV_NAME=$(basename "$(dirname "$file")" | sed 's/tfplan-//')
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ${ENV_NAME}" >> $GITHUB_STEP_SUMMARY
+            echo '```terraform' >> $GITHUB_STEP_SUMMARY
+            head -100 "$file" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Comment PR Summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body.slice(0, 60000)
+            });
