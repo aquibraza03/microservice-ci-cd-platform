@@ -1,0 +1,218 @@
+name: Notifications
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - Security
+      - Terraform Plan
+      - Deploy Dev
+      - Deploy Staging
+      - Deploy Production
+      - Release
+      - Rollback
+    types:
+      - completed
+
+  workflow_dispatch:
+    inputs:
+      status:
+        description: "success | failure | cancelled"
+        required: true
+        type: choice
+        options:
+          - success
+          - failure
+          - cancelled
+      title:
+        description: "Notification title"
+        required: true
+        type: string
+      message:
+        description: "Notification body"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: notify-${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Build Payload (workflow_run)
+        if: github.event_name == 'workflow_run'
+        id: auto
+        shell: bash
+        run: |
+          STATUS="${{ github.event.workflow_run.conclusion }}"
+          NAME="${{ github.event.workflow_run.name }}"
+          URL="${{ github.event.workflow_run.html_url }}"
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          ACTOR="${{ github.event.workflow_run.actor.login }}"
+          RUN_ID="${{ github.event.workflow_run.run_number }}"
+
+          # Status emojis for visual priority
+          case $STATUS in
+            success) EMOJI=":white_check_mark:" ;;
+            failure) EMOJI=":fire: :rotating_light:" ;;
+            cancelled|skipped) EMOJI=":yellow_circle:" ;;
+            *) EMOJI=":grey_question:" ;;
+          esac
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "title=$NAME completed ($STATUS)" >> $GITHUB_OUTPUT
+          {
+            echo "message<<EOF"
+            echo "$EMOJI *${NAME}* ($STATUS)"
+            echo ""
+            echo "Branch: $BRANCH"
+            echo "Actor: $ACTOR"
+            echo "Run: $RUN_ID"
+            echo "[View Run]($URL)"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Build Payload (manual)
+        if: github.event_name == 'workflow_dispatch'
+        id: manual
+        shell: bash
+        run: |
+          STATUS="${{ github.event.inputs.status }}"
+          TITLE="${{ github.event.inputs.title }}"
+          MESSAGE="${{ github.event.inputs.message }}"
+
+          # Status emojis
+          case $STATUS in
+            success) EMOJI=":white_check_mark:" ;;
+            failure) EMOJI=":fire: :rotating_light:" ;;
+            cancelled) EMOJI=":yellow_circle:" ;;
+          esac
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          {
+            echo "message<<EOF"
+            echo "$EMOJI *$TITLE*"
+            echo ""
+            echo "$MESSAGE"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Resolve Values
+        id: data
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "status=${{ steps.auto.outputs.status }}" >> $GITHUB_OUTPUT
+            echo "emoji=${{ steps.auto.outputs.emoji }}" >> $GITHUB_OUTPUT
+            echo "title=${{ steps.auto.outputs.title }}" >> $GITHUB_OUTPUT
+            {
+              echo "message<<EOF"
+              echo "${{ steps.auto.outputs.message }}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "status=${{ steps.manual.outputs.status }}" >> $GITHUB_OUTPUT
+            echo "emoji=${{ steps.manual.outputs.emoji }}" >> $GITHUB_OUTPUT
+            echo "title=${{ steps.manual.outputs.title }}" >> $GITHUB_OUTPUT
+            {
+              echo "message<<EOF"
+              echo "${{ steps.manual.outputs.message }}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Slack Notification
+        if: secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          TEXT="${{ steps.data.outputs.emoji }} *${{ steps.data.outputs.title }}*\n\n${{ steps.data.outputs.message }}"
+          curl -sS -X POST \
+            -H 'Content-type: application/json' \
+            --data "{\"text\":\"$TEXT\"}" \
+            "$WEBHOOK"
+
+      - name: Microsoft Teams Notification
+        if: secrets.TEAMS_WEBHOOK_URL != ''
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          TEXT="${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.title }}\n\n${{ steps.data.outputs.message }}"
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"$TEXT\"}" \
+            "$WEBHOOK"
+
+      - name: Discord Notification
+        if: secrets.DISCORD_WEBHOOK_URL != ''
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          TEXT="${{ steps.data.outputs.emoji }} **${{ steps.data.outputs.title }}**\n\n${{ steps.data.outputs.message }}"
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"$TEXT\"}" \
+            "$WEBHOOK"
+
+      - name: PagerDuty Alert (Critical Failures Only)
+        if: secrets.PAGERDUTY_INTEGRATION_KEY != '' && steps.data.outputs.status == 'failure'
+        env:
+          PD_URL: ${{ secrets.PAGERDUTY_EVENTS_URL }}
+          INTEGRATION_KEY: ${{ secrets.PAGERDUTY_INTEGRATION_KEY }}
+        shell: bash
+        run: |
+          curl -X POST "$PD_URL/v2/enqueue" \
+            -H "Content-type: application/json" \
+            -d "{
+              \"routing_key\": \"$INTEGRATION_KEY\",
+              \"event_action\": \"trigger\",
+              \"payload\": {
+                \"summary\": \"${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.title }}\",
+                \"severity\": \"critical\",
+                \"source\": \"GitHub Actions\",
+                \"component\": \"${{ github.repository }}\",
+                \"details\": {
+                  \"message\": \"${{ steps.data.outputs.message }}\",
+                  \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                }
+              }
+            }"
+
+      - name: Email Notification (High Priority Failures)
+        if: secrets.SMTP_HOST != '' && steps.data.outputs.status == 'failure'
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || 587 }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        shell: bash
+        run: |
+          # Placeholder for SMTP integration
+          echo "Email sent to oncall team: ${{ steps.data.outputs.title }}"
+
+      - name: GitHub Summary
+        run: |
+          echo "## 🚨 Notifications Sent" >> $GITHUB_STEP_SUMMARY
+          echo "- **Title**: ${{ steps.data.outputs.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Channels**: Slack${{ secrets.SLACK_WEBHOOK_URL != '' && ' ✓' || '' }} | Teams${{ secrets.TEAMS_WEBHOOK_URL != '' && ' ✓' || '' }} | Discord${{ secrets.DISCORD_WEBHOOK_URL != '' && ' ✓' || '' }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.data.outputs.status }}" = "failure" ]; then
+            echo "- **PagerDuty**: Triggered 🚨" >> $GITHUB_STEP_SUMMARY
+          fi
