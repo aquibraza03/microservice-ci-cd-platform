@@ -1,0 +1,262 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+      - feature/**
+      - hotfix/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+  GO_VERSION: "1.22"
+
+jobs:
+
+  detect-services:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep '^services/' | cut -d/ -f2 | sort -u || true)
+
+          if [ -z "$CHANGED" ]; then
+            CHANGED=$(find services -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+          fi
+
+          JSON=$(printf '%s\n' "$CHANGED" | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$JSON" >> $GITHUB_OUTPUT
+
+  shell-lint:
+    name: Shell Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: find . -type f -name "*.sh" | xargs -r shellcheck
+
+  service-tests:
+    name: Test ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: detect-services
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Runtime
+        id: runtime
+        shell: bash
+        run: |
+          if [ -f "services/${{ matrix.service }}/package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+          elif [ -f "services/${{ matrix.service }}/requirements.txt" ] || [ -f "services/${{ matrix.service }}/pyproject.toml" ]; then
+            echo "type=python" >> $GITHUB_OUTPUT
+          elif [ -f "services/${{ matrix.service }}/go.mod" ]; then
+            echo "type=go" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node
+        if: steps.runtime.outputs.type == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Setup Python
+        if: steps.runtime.outputs.type == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Setup Go
+        if: steps.runtime.outputs.type == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Node Dependencies
+        if: steps.runtime.outputs.type == 'node'
+        working-directory: services/${{ matrix.service }}
+        run: npm ci
+
+      - name: Install Python Dependencies
+        if: steps.runtime.outputs.type == 'python'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run Node Tests + Coverage
+        if: steps.runtime.outputs.type == 'node'
+        working-directory: services/${{ matrix.service }}
+        run: npm test -- --coverage
+
+      - name: Run Python Tests + Coverage
+        if: steps.runtime.outputs.type == 'python'
+        working-directory: services/${{ matrix.service }}
+        run: pytest --cov=. --cov-report=xml
+
+      - name: Run Go Tests + Coverage
+        if: steps.runtime.outputs.type == 'go'
+        working-directory: services/${{ matrix.service }}
+        run: go test ./... -coverprofile=coverage.out
+
+      - name: Upload Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.service }}
+          path: |
+            services/${{ matrix.service }}/coverage*
+            services/${{ matrix.service }}/coverage.out
+          retention-days: 14
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          verbose: true
+
+  docker-build:
+    name: Docker Build + Trivy Scan
+    runs-on: ubuntu-latest
+    needs: detect-services
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Dockerfile
+        id: hasdocker
+        shell: bash
+        run: |
+          if [ -f "services/${{ matrix.service }}/Dockerfile" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Image
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: services/${{ matrix.service }}
+          push: false
+          load: true
+          tags: local/${{ matrix.service }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy Scan
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: local/${{ matrix.service }}:ci
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format Check
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform validate
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+  ci-summary:
+    name: CI Summary
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - shell-lint
+      - service-tests
+      - docker-build
+      - terraform-validate
+      - secret-scan
+
+    steps:
+      - name: Publish Summary
+        run: |
+          echo "## CI Pipeline Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Tests executed" >> $GITHUB_STEP_SUMMARY
+          echo "- Coverage uploaded" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker images validated" >> $GITHUB_STEP_SUMMARY
+          echo "- Trivy security scan completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Terraform validated" >> $GITHUB_STEP_SUMMARY
+          echo "- Secret scan completed" >> $GITHUB_STEP_SUMMARY
