@@ -1,0 +1,202 @@
+name: Hotfix
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to hotfix"
+        required: true
+        type: string
+
+      image_ref:
+        description: "Immutable image tag or digest"
+        required: true
+        type: string
+
+      reason:
+        description: "Production issue / incident reason"
+        required: true
+        type: string
+
+      change_ticket:
+        description: "Approved emergency change ticket"
+        required: true
+        type: string
+
+      strategy:
+        description: "Hotfix rollout strategy"
+        required: true
+        type: choice
+        options:
+          - hotfix-rolling
+          - blue-green
+          - canary
+
+permissions:
+  contents: write
+  deployments: write
+  checks: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: hotfix-${{ github.event.inputs.service }}
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: prod
+
+jobs:
+
+  preflight:
+    name: Emergency Validation
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.target.outputs.type }}
+      health_path: ${{ steps.health.outputs.path }}
+      branch: ${{ steps.branch.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Inputs
+        shell: bash
+        run: |
+          test -d services/${{ github.event.inputs.service }}
+          test -n "${{ github.event.inputs.image_ref }}"
+          test -n "${{ github.event.inputs.reason }}"
+          echo "${{ github.event.inputs.change_ticket }}" | grep -E '^[A-Z]+-[0-9]+$'
+
+      - name: Create Emergency Branch Name
+        id: branch
+        shell: bash
+        run: |
+          NAME="hotfix/${{ github.event.inputs.change_ticket }}-${{ github.event.inputs.service }}"
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+
+      - name: Create Audit Branch
+        shell: bash
+        run: |
+          git checkout -b "${{ steps.branch.outputs.name }}"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git commit --allow-empty -m "Emergency hotfix: ${{ github.event.inputs.change_ticket }}"
+          git push origin "${{ steps.branch.outputs.name }}"
+
+      - name: Detect Deployment Target
+        id: target
+        shell: bash
+        run: |
+          if [ -f "services/${{ github.event.inputs.service }}/service.yml" ]; then
+            TYPE=$(grep '^target:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}')
+          elif [ -d deploy/k8s ]; then
+            TYPE="k8s"
+          elif [ -d deploy/ecs ]; then
+            TYPE="ecs"
+          else
+            echo "No deployment target found"
+            exit 1
+          fi
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+
+      - name: Read Health Path
+        id: health
+        shell: bash
+        run: |
+          PATH_CHECK=$(grep '^healthcheck:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}' || true)
+          [ -z "$PATH_CHECK" ] && PATH_CHECK="/health"
+          echo "path=$PATH_CHECK" >> $GITHUB_OUTPUT
+
+  deploy-hotfix:
+    name: Emergency Deploy
+    runs-on: ubuntu-latest
+    needs: preflight
+    timeout-minutes: 20
+
+    environment:
+      name: prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Notify Start (Slack Placeholder)
+        run: |
+          echo "HOTFIX STARTED: ${{ github.event.inputs.service }}"
+
+      - name: Configure Cloud Auth (OIDC Placeholder)
+        run: echo "Configure AWS/GCP/Azure federation here"
+
+      - name: Execute Hotfix Deployment
+        run: |
+          chmod +x deploy/scripts/deploy.sh
+          deploy/scripts/deploy.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ env.ENVIRONMENT }}" \
+            "${{ github.event.inputs.image_ref }}" \
+            "${{ needs.preflight.outputs.target }}" \
+            "${{ github.event.inputs.strategy }}"
+
+      - name: Immediate Health Validation
+        run: |
+          chmod +x ci/smoke-test.sh
+          ci/smoke-test.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ needs.preflight.outputs.health_path }}" \
+            "${{ env.ENVIRONMENT }}"
+
+      - name: Auto Rollback on Failure
+        if: failure()
+        run: |
+          chmod +x deploy/scripts/rollback.sh
+          deploy/scripts/rollback.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ env.ENVIRONMENT }}" \
+            "${{ needs.preflight.outputs.target }}"
+
+      - name: Notify Failure (PagerDuty Placeholder)
+        if: failure()
+        run: |
+          echo "Trigger PagerDuty for failed hotfix"
+
+  post-incident:
+    name: Create Recovery PR
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - deploy-hotfix
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ${{ needs.preflight.outputs.branch }}
+          base: main
+          title: "Post-hotfix merge: ${{ github.event.inputs.change_ticket }}"
+          body: |
+            Emergency hotfix executed.
+
+            Service: ${{ github.event.inputs.service }}
+            Ticket: ${{ github.event.inputs.change_ticket }}
+            Reason: ${{ github.event.inputs.reason }}
+
+  summary:
+    name: Hotfix Summary
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - deploy-hotfix
+      - post-incident
+
+    steps:
+      - name: Publish Summary
+        run: |
+          echo "## Emergency Hotfix Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: ${{ github.event.inputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Strategy: ${{ github.event.inputs.strategy }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Ticket: ${{ github.event.inputs.change_ticket }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Audit Branch: ${{ needs.preflight.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Recovery PR created" >> $GITHUB_STEP_SUMMARY
