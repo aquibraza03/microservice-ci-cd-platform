@@ -1,0 +1,107 @@
+deployPipeline
+
+Reusable deployment pipeline for monorepo services using Kubernetes Jenkins agents.
+
+Purpose:
+- validate deployment inputs
+- resolve image tag or digest
+- run policy checks
+- deploy service using existing repo scripts
+- smoke test deployment
+- production approval gate
+- optional automatic rollback
+- junit + artifact publishing
+- notifications
+
+Repository Alignment:
+This step is designed to orchestrate existing repo logic, not duplicate it.
+
+Uses:
+- ./deploy/deploy.sh
+- ./deploy/rollback.sh
+- ./ci/versioning.sh
+- ./ci/validate-service.sh
+- ./ci/smoke-test.sh
+- ./scripts/notify.sh
+
+Basic Usage:
+
+@Library('platform-lib') _
+
+deployPipeline()
+
+Parameterized Usage:
+
+deployPipeline(
+  env: 'dev',
+  service: 'auth-service',
+  image: 'ghcr.io/company/auth-service@sha256:abc123',
+  autoRollback: true,
+  requireApproval: true,
+  container: 'runner'
+)
+
+Supported Config:
+
+env
+  Target environment.
+  Values:
+  - dev
+  - staging
+  - prod
+
+service
+  Service folder under services/
+
+image
+  Optional image reference.
+  If omitted, resolves using ./ci/versioning.sh
+
+autoRollback
+  true | false
+  Roll back automatically on failure.
+
+requireApproval
+  true | false
+  If true, production deployments require manual approval.
+
+container
+  Kubernetes pod container name.
+  Default:
+  runner
+
+Examples:
+
+Deploy to staging:
+
+deployPipeline(
+  env: 'staging',
+  service: 'orders-service'
+)
+
+Deploy explicit immutable image to prod:
+
+deployPipeline(
+  env: 'prod',
+  service: 'payments-service',
+  image: 'registry/app@sha256:123abc',
+  requireApproval: true
+)
+
+Disable rollback:
+
+deployPipeline(
+  env: 'dev',
+  service: 'notification-service',
+  autoRollback: false
+)
+
+Outputs:
+- Build description updated
+- JUnit reports if present
+- reports/** archived
+- notifications sent if configured
+
+Best Practice:
+Keep deployment logic inside repo scripts.
+Use this shared step only as orchestration layer.
