@@ -1,0 +1,108 @@
+junitReports
+
+Reusable Jenkins Shared Library step for publishing JUnit XML test reports.
+
+Purpose:
+- standardize test report publishing across pipelines
+- reduce repeated junit(...) blocks
+- support custom report paths
+- safely handle missing reports when configured
+- improve CI visibility in Jenkins UI
+
+Typical Use Cases:
+- unit tests
+- integration tests
+- smoke tests
+- security tools exporting JUnit XML
+- multi-language monorepos
+
+Basic Usage:
+
+@Library('platform-lib') _
+
+junitReports()
+
+Custom Usage:
+
+junitReports(
+  pattern: '**/surefire-reports/*.xml',
+  allowEmpty: false
+)
+
+Supported Parameters:
+
+pattern
+  File glob for JUnit XML reports.
+
+  Default:
+  **/test-results.xml
+
+Examples:
+  **/test-results.xml
+  **/surefire-reports/*.xml
+  services/*/reports/junit.xml
+
+allowEmpty
+  true | false
+
+  true  = do not fail if reports missing
+  false = fail build if no reports found
+
+  Default:
+  true
+
+healthScaleFactor
+  Jenkins test health score multiplier.
+
+  Default:
+  1.0
+
+keepLongStdio
+  true | false
+
+  Preserve long stdout/stderr logs.
+
+  Default:
+  false
+
+skipMarkingBuildUnstable
+  true | false
+
+  Prevent failed tests from marking build unstable.
+
+  Default:
+  false
+
+Examples:
+
+Standard monorepo usage:
+
+junitReports()
+
+Java Maven reports:
+
+junitReports(
+  pattern: '**/surefire-reports/*.xml'
+)
+
+Strict enforcement:
+
+junitReports(
+  pattern: 'reports/junit.xml',
+  allowEmpty: false
+)
+
+Operational pipeline usage:
+
+junitReports(
+  pattern: '**/security-junit.xml',
+  allowEmpty: true
+)
+
+Best Practice:
+Use one shared reporting standard across:
+- Jenkinsfile.monorepo
+- Jenkinsfile.deploy
+- Jenkinsfile.ops
+
+This keeps dashboards consistent.
