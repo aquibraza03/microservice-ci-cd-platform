@@ -1,0 +1,97 @@
+# -----------------------------------------------------------------------------
+# CODEOWNERS
+# Enterprise ownership model for monorepo / platform repository
+# Order matters: last matching rule wins
+# -----------------------------------------------------------------------------
+
+# Global fallback owners
+*                                   @aquibraza03
+
+# -----------------------------------------------------------------------------
+# GitHub Governance
+# -----------------------------------------------------------------------------
+
+.github/                            @aquibraza03
+.github/workflows/                  @aquibraza03
+.github/actions/                    @aquibraza03
+
+# Security-sensitive files
+.github/workflows/security.yml      @aquibraza03
+.github/workflows/deploy-prod.yml   @aquibraza03
+.github/workflows/rollback.yml      @aquibraza03
+.github/workflows/hotfix.yml        @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Infrastructure / Terraform
+# -----------------------------------------------------------------------------
+
+infra/                              @aquibraza03
+terraform/                          @aquibraza03
+environments/                       @aquibraza03
+
+# Production environment protection
+environments/prod/                  @aquibraza03
+environments/staging/               @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Kubernetes / Deployment Manifests
+# -----------------------------------------------------------------------------
+
+k8s/                                @aquibraza03
+helm/                               @aquibraza03
+deploy/                             @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Shared Platform Code
+# -----------------------------------------------------------------------------
+
+packages/                           @aquibraza03
+libs/                               @aquibraza03
+shared/                             @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Services Ownership
+# -----------------------------------------------------------------------------
+
+services/auth-service/              @aquibraza03
+services/orders-service/            @aquibraza03
+services/payments-service/          @aquibraza03
+services/notification-service/      @aquibraza03
+
+# Catch-all for future services
+services/                           @aquibraza03
+
+# -----------------------------------------------------------------------------
+# CI / Test Ownership
+# -----------------------------------------------------------------------------
+
+tests/                              @aquibraza03
+ci/                                 @aquibraza03
+scripts/                            @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Documentation
+# -----------------------------------------------------------------------------
+
+docs/                               @aquibraza03
+*.md                                @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Config Files
+# -----------------------------------------------------------------------------
+
+Dockerfile                          @aquibraza03
+docker-compose.yml                  @aquibraza03
+package.json                        @aquibraza03
+package-lock.json                   @aquibraza03
+requirements.txt                    @aquibraza03
+pyproject.toml                      @aquibraza03
+go.mod                              @aquibraza03
+go.sum                              @aquibraza03
+
+# -----------------------------------------------------------------------------
+# Emergency / High Risk Paths
+# -----------------------------------------------------------------------------
+
+prod/                               @aquibraza03
+secrets/                            @aquibraza03
