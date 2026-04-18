@@ -1,0 +1,140 @@
+name: Kubernetes Deploy
+description: Enterprise reusable composite action for Kubernetes deployments with rollout checks, namespace targeting, health verification, and rollback support.
+
+inputs:
+  kubeconfig:
+    description: Base64 encoded kubeconfig content
+    required: true
+
+  namespace:
+    description: Kubernetes namespace
+    required: true
+
+  deployment:
+    description: Deployment name
+    required: true
+
+  container:
+    description: Container name inside deployment
+    required: true
+
+  image:
+    description: Full image reference (prefer digest)
+    required: true
+
+  health_url:
+    description: Optional HTTP health endpoint
+    required: false
+    default: ""
+
+  timeout:
+    description: Rollout timeout
+    required: false
+    default: "300s"
+
+  replicas:
+    description: Optional replica count
+    required: false
+    default: ""
+
+  rollback_on_failure:
+    description: Auto rollback on failed rollout
+    required: false
+    default: "true"
+
+outputs:
+  deployed_image:
+    description: Image deployed
+    value: ${{ inputs.image }}
+
+  namespace:
+    description: Namespace deployed to
+    value: ${{ inputs.namespace }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v4
+
+    - name: Configure kubeconfig
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.kube"
+        echo "${{ inputs.kubeconfig }}" | base64 -d > "$HOME/.kube/config"
+        chmod 600 "$HOME/.kube/config"
+
+    - name: Validate Cluster Access
+      shell: bash
+      run: |
+        kubectl version --client
+        kubectl get ns "${{ inputs.namespace }}"
+
+    - name: Capture Previous Image
+      id: previous
+      shell: bash
+      run: |
+        OLD_IMAGE=$(kubectl -n "${{ inputs.namespace }}" \
+          get deployment "${{ inputs.deployment }}" \
+          -o jsonpath='{.spec.template.spec.containers[?(@.name=="${{ inputs.container }}")].image}')
+
+        echo "image=$OLD_IMAGE" >> $GITHUB_OUTPUT
+
+    - name: Optional Scale Replicas
+      if: inputs.replicas != ''
+      shell: bash
+      run: |
+        kubectl -n "${{ inputs.namespace }}" \
+          scale deployment "${{ inputs.deployment }}" \
+          --replicas=${{ inputs.replicas }}
+
+    - name: Set Image
+      shell: bash
+      run: |
+        kubectl -n "${{ inputs.namespace }}" \
+          set image deployment/${{ inputs.deployment }} \
+          ${{ inputs.container }}=${{ inputs.image }}
+
+    - name: Wait for Rollout
+      id: rollout
+      shell: bash
+      run: |
+        kubectl -n "${{ inputs.namespace }}" \
+          rollout status deployment/${{ inputs.deployment }} \
+          --timeout=${{ inputs.timeout }}
+
+    - name: HTTP Health Check
+      if: inputs.health_url != ''
+      shell: bash
+      run: |
+        for i in $(seq 1 20); do
+          code=$(curl -ks -o /dev/null -w "%{http_code}" "${{ inputs.health_url }}" || true)
+          if [ "$code" = "200" ]; then
+            exit 0
+          fi
+          sleep 5
+        done
+        exit 1
+
+    - name: Auto Rollback
+      if: failure() && inputs.rollback_on_failure == 'true'
+      shell: bash
+      run: |
+        kubectl -n "${{ inputs.namespace }}" \
+          set image deployment/${{ inputs.deployment }} \
+          ${{ inputs.container }}=${{ steps.previous.outputs.image }}
+
+        kubectl -n "${{ inputs.namespace }}" \
+          rollout status deployment/${{ inputs.deployment }} \
+          --timeout=${{ inputs.timeout }}
+
+    - name: Publish Summary
+      shell: bash
+      run: |
+        echo "## Kubernetes Deployment Completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Namespace: ${{ inputs.namespace }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Deployment: ${{ inputs.deployment }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Container: ${{ inputs.container }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Image: ${{ inputs.image }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Rollback Enabled: ${{ inputs.rollback_on_failure }}" >> $GITHUB_STEP_SUMMARY
