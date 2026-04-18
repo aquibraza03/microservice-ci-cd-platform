@@ -1,0 +1,23 @@
+{
+  "username": "Platform Bot",
+  "icon": ":rocket:",
+  "defaultChannel": "#platform-alerts",
+  "footer": "Microservice CI/CD Platform",
+  "mentions": {
+    "failure": "@here",
+    "warning": "",
+    "success": ""
+  },
+  "colors": {
+    "success": "good",
+    "warning": "warning",
+    "failure": "danger",
+    "info": "#439FE0"
+  },
+  "titles": {
+    "success": "Pipeline Succeeded",
+    "failure": "Pipeline Failed",
+    "warning": "Attention Required",
+    "info": "Pipeline Notification"
+  }
+}
