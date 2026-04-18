@@ -1,0 +1,199 @@
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile 'jenkins/agents/k8s-pod.yaml'
+      defaultContainer 'runner'
+    }
+  }
+
+  options {
+    skipDefaultCheckout(true)
+    timestamps()
+    ansiColor('xterm')
+    disableConcurrentBuilds()
+    timeout(time: 45, unit: 'MINUTES')
+    buildDiscarder(logRotator(
+      numToKeepStr: '20',
+      artifactNumToKeepStr: '10'
+    ))
+  }
+
+  parameters {
+    choice(
+      name: 'ENV',
+      choices: ['dev', 'staging', 'prod'],
+      description: 'Target deployment environment'
+    )
+
+    string(
+      name: 'SERVICE',
+      defaultValue: '',
+      description: 'Service name under services/'
+    )
+
+    string(
+      name: 'IMAGE_REF',
+      defaultValue: '',
+      description: 'Optional image tag or immutable digest'
+    )
+
+    booleanParam(
+      name: 'AUTO_ROLLBACK',
+      defaultValue: true,
+      description: 'Rollback automatically if deployment fails'
+    )
+  }
+
+  environment {
+    CI = "true"
+    PLATFORM_ENV = "${params.ENV}"
+    SERVICE_NAME = "${params.SERVICE}"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Validate Inputs') {
+      steps {
+        script {
+          if (!params.SERVICE?.trim()) {
+            error("SERVICE parameter is required")
+          }
+
+          if (!fileExists("services/${params.SERVICE}")) {
+            error("Service not found: services/${params.SERVICE}")
+          }
+
+          env.IMAGE = params.IMAGE_REF?.trim()
+
+          if (!env.IMAGE) {
+            env.IMAGE = sh(
+              script: './ci/versioning.sh',
+              returnStdout: true
+            ).trim()
+          }
+
+          if (!env.IMAGE) {
+            error("Unable to resolve IMAGE_REF")
+          }
+        }
+      }
+    }
+
+    stage('Policy Checks') {
+      steps {
+        container('runner') {
+          sh '''
+            chmod +x ci/*.sh deploy/*.sh scripts/*.sh || true
+            ./ci/policy.sh
+          '''
+        }
+      }
+    }
+
+    stage('Pre-Deploy Validation') {
+      steps {
+        container('runner') {
+          sh """
+            ./ci/validate-service.sh ${SERVICE_NAME}
+          """
+        }
+      }
+    }
+
+    stage('Production Approval') {
+      when {
+        expression { params.ENV == 'prod' }
+      }
+
+      steps {
+        timeout(time: 20, unit: 'MINUTES') {
+          input(
+            message: "Approve deployment of ${params.SERVICE} to PROD?",
+            ok: "Deploy"
+          )
+        }
+      }
+    }
+
+    stage('Deploy') {
+      steps {
+        container('runner') {
+          retry(2) {
+            sh """
+              export SERVICE=${SERVICE_NAME}
+              export IMAGE_REF=${IMAGE}
+              ./deploy/deploy.sh ${PLATFORM_ENV}
+            """
+          }
+        }
+      }
+    }
+
+    stage('Smoke Test') {
+      steps {
+        container('runner') {
+          retry(2) {
+            sh """
+              ./ci/smoke-test.sh ${SERVICE_NAME}
+            """
+          }
+        }
+      }
+    }
+  }
+
+  post {
+
+    success {
+      echo "✅ Deployment succeeded"
+
+      container('runner') {
+        sh """
+          ./scripts/notify.sh success \
+          "Deployment successful: ${SERVICE_NAME} -> ${PLATFORM_ENV} (${IMAGE})"
+        """
+      }
+    }
+
+    failure {
+      echo "❌ Deployment failed"
+
+      script {
+        if (params.AUTO_ROLLBACK) {
+          container('runner') {
+            sh """
+              if [ -f ./deploy/rollback.sh ]; then
+                ./deploy/rollback.sh ${PLATFORM_ENV} ${SERVICE_NAME}
+              fi
+            """
+          }
+        }
+      }
+
+      container('runner') {
+        sh """
+          ./scripts/notify.sh failure \
+          "Deployment failed: ${SERVICE_NAME} -> ${PLATFORM_ENV}"
+        """
+      }
+    }
+
+    always {
+      archiveArtifacts(
+        artifacts: 'services.txt',
+        allowEmptyArchive: true
+      )
+
+      script {
+        currentBuild.description =
+          "${params.SERVICE} | ${params.ENV} | ${env.IMAGE}"
+      }
+    }
+  }
+}
