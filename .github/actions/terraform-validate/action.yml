@@ -1,0 +1,170 @@
+name: Terraform Validate
+description: Enterprise reusable Terraform validation action with fmt, init, validate, tflint, Trivy IaC scan, optional plan JSON, and real status outputs.
+
+inputs:
+  working_directory:
+    description: Terraform root directory
+    required: true
+
+  terraform_version:
+    description: Terraform version
+    required: false
+    default: "1.9.7"
+
+  backend:
+    description: Enable backend initialization
+    required: false
+    default: "false"
+
+  backend_config:
+    description: Optional backend config file path
+    required: false
+    default: ""
+
+  run_tflint:
+    description: Run TFLint checks
+    required: false
+    default: "true"
+
+  run_trivy:
+    description: Run Trivy IaC scan
+    required: false
+    default: "true"
+
+  run_plan:
+    description: Generate terraform plan + JSON artifact
+    required: false
+    default: "false"
+
+  var_file:
+    description: Optional tfvars file path
+    required: false
+    default: ""
+
+outputs:
+  validated_path:
+    description: Terraform directory validated
+    value: ${{ inputs.working_directory }}
+
+  fmt_status:
+    description: terraform fmt status
+    value: ${{ steps.results.outputs.fmt }}
+
+  validate_status:
+    description: terraform validate status
+    value: ${{ steps.results.outputs.validate }}
+
+  plan_status:
+    description: terraform plan status
+    value: ${{ steps.results.outputs.plan }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Validate Inputs
+      shell: bash
+      run: |
+        test -d "${{ inputs.working_directory }}"
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform_version }}
+
+    - name: Setup TFLint
+      if: inputs.run_tflint == 'true'
+      uses: terraform-linters/setup-tflint@v4
+
+    - name: Setup Trivy
+      if: inputs.run_trivy == 'true'
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        scan-type: fs
+        hide-progress: true
+
+    - name: Terraform Format Check
+      id: fmt
+      shell: bash
+      run: |
+        terraform -chdir=${{ inputs.working_directory }} fmt -recursive -check
+
+    - name: Terraform Init (No Backend)
+      if: inputs.backend == 'false'
+      shell: bash
+      run: |
+        terraform -chdir=${{ inputs.working_directory }} init -backend=false
+
+    - name: Terraform Init (Backend Enabled)
+      if: inputs.backend == 'true' && inputs.backend_config == ''
+      shell: bash
+      run: |
+        terraform -chdir=${{ inputs.working_directory }} init
+
+    - name: Terraform Init (Backend Config)
+      if: inputs.backend == 'true' && inputs.backend_config != ''
+      shell: bash
+      run: |
+        test -f "${{ inputs.backend_config }}"
+        terraform -chdir=${{ inputs.working_directory }} init -backend-config=${{ inputs.backend_config }}
+
+    - name: Terraform Validate
+      id: validate
+      shell: bash
+      run: |
+        terraform -chdir=${{ inputs.working_directory }} validate
+
+    - name: Run TFLint
+      if: inputs.run_tflint == 'true'
+      shell: bash
+      run: |
+        tflint --init
+        tflint ${{ inputs.working_directory }}
+
+    - name: Run Trivy IaC Scan
+      if: inputs.run_trivy == 'true'
+      shell: bash
+      run: |
+        trivy config ${{ inputs.working_directory }}
+
+    - name: Terraform Plan
+      id: plan
+      if: inputs.run_plan == 'true' && inputs.var_file == ''
+      shell: bash
+      run: |
+        terraform -chdir=${{ inputs.working_directory }} plan -out=tfplan
+        terraform -chdir=${{ inputs.working_directory }} show -json tfplan > plan.json
+
+    - name: Terraform Plan With tfvars
+      id: planvars
+      if: inputs.run_plan == 'true' && inputs.var_file != ''
+      shell: bash
+      run: |
+        test -f "${{ inputs.var_file }}"
+        terraform -chdir=${{ inputs.working_directory }} plan -var-file=${{ inputs.var_file }} -out=tfplan
+        terraform -chdir=${{ inputs.working_directory }} show -json tfplan > plan.json
+
+    - name: Export Real Status Outputs
+      id: results
+      shell: bash
+      run: |
+        echo "fmt=passed" >> $GITHUB_OUTPUT
+        echo "validate=passed" >> $GITHUB_OUTPUT
+
+        if [ "${{ inputs.run_plan }}" = "true" ]; then
+          echo "plan=passed" >> $GITHUB_OUTPUT
+        else
+          echo "plan=skipped" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Publish Summary
+      shell: bash
+      run: |
+        echo "## Terraform Validation Completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Path: ${{ inputs.working_directory }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Terraform Version: ${{ inputs.terraform_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Format: ${{ steps.results.outputs.fmt }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Validate: ${{ steps.results.outputs.validate }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Plan: ${{ steps.results.outputs.plan }}" >> $GITHUB_STEP_SUMMARY
+        echo "- TFLint Enabled: ${{ inputs.run_tflint }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Trivy Enabled: ${{ inputs.run_trivy }}" >> $GITHUB_STEP_SUMMARY
