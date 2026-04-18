@@ -1,0 +1,141 @@
+name: Slack Notify
+description: Enterprise reusable composite action for sending Slack notifications with severity levels, rich metadata, retries, and GitHub workflow context.
+
+inputs:
+  webhook_url:
+    description: Slack incoming webhook URL
+    required: true
+
+  message:
+    description: Main notification message
+    required: true
+
+  title:
+    description: Notification title
+    required: false
+    default: "Workflow Notification"
+
+  status:
+    description: success | warning | failure | info
+    required: false
+    default: "info"
+
+  channel:
+    description: Optional channel override (if supported by webhook)
+    required: false
+    default: ""
+
+  username:
+    description: Display username
+    required: false
+    default: "GitHub Actions"
+
+  icon_emoji:
+    description: Slack icon emoji
+    required: false
+    default: ":rocket:"
+
+  mention:
+    description: Optional mention (@channel, @here, user group)
+    required: false
+    default: ""
+
+  footer:
+    description: Footer text
+    required: false
+    default: "CI/CD Notification"
+
+  max_retries:
+    description: Retry attempts
+    required: false
+    default: "3"
+
+outputs:
+  sent:
+    description: Whether message was sent
+    value: ${{ steps.send.outputs.sent }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Validate Inputs
+      shell: bash
+      run: |
+        test -n "${{ inputs.webhook_url }}"
+        test -n "${{ inputs.message }}"
+
+    - name: Resolve Color
+      id: color
+      shell: bash
+      run: |
+        case "${{ inputs.status }}" in
+          success) echo "value=good" >> $GITHUB_OUTPUT ;;
+          warning) echo "value=warning" >> $GITHUB_OUTPUT ;;
+          failure) echo "value=danger" >> $GITHUB_OUTPUT ;;
+          *) echo "value=#439FE0" >> $GITHUB_OUTPUT ;;
+        esac
+
+    - name: Build Payload
+      id: payload
+      shell: bash
+      run: |
+        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        SHORT_SHA="$(echo "${{ github.sha }}" | cut -c1-7)"
+
+        cat > payload.json <<EOF
+        {
+          "username": "${{ inputs.username }}",
+          "icon_emoji": "${{ inputs.icon_emoji }}",
+          "attachments": [
+            {
+              "color": "${{ steps.color.outputs.value }}",
+              "title": "${{ inputs.title }}",
+              "title_link": "$RUN_URL",
+              "text": "${{ inputs.mention }} ${{ inputs.message }}",
+              "fields": [
+                { "title": "Repository", "value": "${{ github.repository }}", "short": true },
+                { "title": "Branch", "value": "${{ github.ref_name }}", "short": true },
+                { "title": "Actor", "value": "${{ github.actor }}", "short": true },
+                { "title": "Commit", "value": "$SHORT_SHA", "short": true }
+              ],
+              "footer": "${{ inputs.footer }}"
+            }
+          ]
+        }
+        EOF
+
+    - name: Send Notification
+      id: send
+      shell: bash
+      run: |
+        ATTEMPT=1
+        MAX="${{ inputs.max_retries }}"
+
+        until [ "$ATTEMPT" -gt "$MAX" ]
+        do
+          CODE=$(curl -sS -o response.txt -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data @payload.json \
+            "${{ inputs.webhook_url }}" || true)
+
+          if [ "$CODE" = "200" ]; then
+            echo "sent=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          ATTEMPT=$((ATTEMPT+1))
+          sleep 2
+        done
+
+        echo "sent=false" >> $GITHUB_OUTPUT
+        exit 1
+
+    - name: Publish Summary
+      shell: bash
+      run: |
+        echo "## Slack Notification Sent" >> $GITHUB_STEP_SUMMARY
+        echo "- Title: ${{ inputs.title }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ inputs.status }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Sent: ${{ steps.send.outputs.sent }}" >> $GITHUB_STEP_SUMMARY
