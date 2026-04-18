@@ -1,0 +1,123 @@
+opsPipeline
+
+Reusable operational pipeline for platform repositories using Kubernetes Jenkins agents.
+
+Purpose:
+- run security operations
+- run infrastructure plan/apply
+- publish releases
+- perform dependency update workflows
+- enforce approval gates
+- archive reports and artifacts
+- send notifications
+
+Repository Alignment:
+This step orchestrates existing repo scripts.
+It does not replace your existing shell automation.
+
+Uses Existing Repo Paths:
+- ./ci/security.sh
+- ./ci/dependency-update.sh
+- ./ci/versioning.sh
+- ./infra/terraform-plan.sh
+- ./infra/terraform-apply.sh
+- ./terraform/plan.sh
+- ./terraform/apply.sh
+- ./release/release.sh
+- ./ci/release.sh
+- ./scripts/notify.sh
+
+Basic Usage:
+
+@Library('platform-lib') _
+
+opsPipeline()
+
+Parameterized Usage:
+
+opsPipeline(
+  mode: 'security',
+  env: 'dev',
+  autoApprove: false,
+  container: 'runner'
+)
+
+Supported Modes:
+
+mode
+  Select operation to run.
+
+  Values:
+  - security
+  - infra
+  - release
+  - dependency-update
+
+env
+  Target environment.
+
+  Values:
+  - dev
+  - staging
+  - prod
+
+autoApprove
+  true | false
+
+  For non-production:
+  true  = skip approval gates
+  false = require approval
+
+  Production always requires governance controls.
+
+container
+  Kubernetes pod container name.
+
+  Default:
+  runner
+
+Examples:
+
+Run security checks:
+
+opsPipeline(
+  mode: 'security'
+)
+
+Run dependency maintenance:
+
+opsPipeline(
+  mode: 'dependency-update'
+)
+
+Terraform plan/apply to staging:
+
+opsPipeline(
+  mode: 'infra',
+  env: 'staging',
+  autoApprove: true
+)
+
+Release to production:
+
+opsPipeline(
+  mode: 'release',
+  env: 'prod'
+)
+
+Outputs:
+- JUnit reports if available
+- Terraform plan artifacts
+- HTML reports from reports/index.html
+- Build description updated
+- Notifications sent if configured
+
+Governance Notes:
+- Infrastructure changes can require approval
+- Production release paths should remain controlled
+- Keep business logic in repo scripts, not Jenkins Groovy
+
+Best Practice:
+Use opsPipeline for scheduled or controlled platform operations.
+Use ciPipeline for service CI.
+Use deployPipeline for application deployments.
