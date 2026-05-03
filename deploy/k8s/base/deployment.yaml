@@ -6,7 +6,9 @@ metadata:
   namespace: ${K8S_NAMESPACE}
 
   labels:
-    app: ${SERVICE_NAME}
+    app.kubernetes.io/name: ${SERVICE_NAME}
+    app.kubernetes.io/instance: ${SERVICE_NAME}
+    app.kubernetes.io/component: backend
     version: "${DEPLOY_VERSION}"
 
 spec:
@@ -14,15 +16,19 @@ spec:
 
   selector:
     matchLabels:
-      app: ${SERVICE_NAME}
+      app.kubernetes.io/instance: ${SERVICE_NAME}
 
   template:
     metadata:
       labels:
-        app: ${SERVICE_NAME}
+        app.kubernetes.io/name: ${SERVICE_NAME}
+        app.kubernetes.io/instance: ${SERVICE_NAME}
+        app.kubernetes.io/component: backend
         version: "${DEPLOY_VERSION}"
 
     spec:
+      serviceAccountName: ${SERVICE_NAME}
+
       containers:
         - name: ${SERVICE_NAME}
 
@@ -36,6 +42,9 @@ spec:
           env:
             - name: SERVICE_NAME
               value: "${SERVICE_NAME}"
+
+            - name: SERVICE_PORT
+              value: "${CONTAINER_PORT}"
 
             - name: ENVIRONMENT
               value: "${ENVIRONMENT}"
@@ -51,7 +60,7 @@ spec:
 
           readinessProbe:
             httpGet:
-              path: ${HEALTH_PATH}
+              path: ${READINESS_PATH}
               port: ${CONTAINER_PORT}
             initialDelaySeconds: 10
             periodSeconds: 5
