@@ -122,7 +122,12 @@ jobs:
       - name: Install Node Dependencies
         if: steps.runtime.outputs.type == 'node'
         working-directory: services/${{ matrix.service }}
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --package-lock=false
+          fi
 
       - name: Install Python Dependencies
         if: steps.runtime.outputs.type == 'python'
@@ -134,7 +139,7 @@ jobs:
       - name: Run Node Tests + Coverage
         if: steps.runtime.outputs.type == 'node'
         working-directory: services/${{ matrix.service }}
-        run: npm test -- --coverage
+        run: npm test
 
       - name: Run Python Tests + Coverage
         if: steps.runtime.outputs.type == 'python'
@@ -147,6 +152,7 @@ jobs:
         run: go test ./... -coverprofile=coverage.out
 
       - name: Upload Coverage Artifact
+        if: hashFiles(format('services/{0}/coverage*', matrix.service), format('services/{0}/coverage.out', matrix.service)) != ''
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.service }}
@@ -156,6 +162,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Coverage to Codecov
+        if: hashFiles(format('services/{0}/coverage*', matrix.service), format('services/{0}/coverage.out', matrix.service)) != ''
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
