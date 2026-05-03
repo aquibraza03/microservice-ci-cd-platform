@@ -6,13 +6,15 @@ metadata:
   namespace: ${K8S_NAMESPACE}
 
   labels:
-    app: ${SERVICE_NAME}
+    app.kubernetes.io/name: ${SERVICE_NAME}
+    app.kubernetes.io/instance: ${SERVICE_NAME}
+    app.kubernetes.io/component: backend
 
 spec:
   type: ${SERVICE_TYPE}
 
   selector:
-    app: ${SERVICE_NAME}
+    app.kubernetes.io/instance: ${SERVICE_NAME}
 
   ports:
     - name: http
