@@ -4,26 +4,6 @@
 
 **Accepted**
 
----
-
-## Context
-
-The platform previously relied on:
-
-* `auth-service` (demo-only)
-* placeholder service directories
-
-This created a critical gap:
-
-> ❌ No reliable way to validate the full platform lifecycle
-
-As a result:
-
-* CI/CD correctness was unverified
-* Kubernetes integration was partially assumed
-* platform reusability was not proven
-
----
 
 ## Problem Statement
 
