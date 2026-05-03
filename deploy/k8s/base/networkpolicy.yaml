@@ -1,15 +1,18 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: app
+  name: ${SERVICE_NAME}
+  namespace: ${K8S_NAMESPACE}
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/name: ${SERVICE_NAME}
+    app.kubernetes.io/instance: ${SERVICE_NAME}
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/instance: app
+      app.kubernetes.io/instance: ${SERVICE_NAME}
 
   policyTypes:
     - Ingress
@@ -18,6 +21,9 @@ spec:
   ingress:
     - from:
         - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: ${CONTAINER_PORT}
 
   egress:
     # Allow same-namespace traffic
