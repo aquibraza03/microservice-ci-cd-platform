@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVICE="${1:?Usage: $0 <service-name>}"
-TAG="${2:-latest}"
+SERVICE="${1:?Usage: $0 <service-name> [tag]}"
+TAG="${2:-dev}"
+REGISTRY="${REGISTRY:-}"
 
-IMAGE="$SERVICE:$TAG"
+IMAGE="${REGISTRY:+$REGISTRY/}$SERVICE:$TAG"
 
-echo "🔒 Running security scan for $IMAGE"
+echo "Running security scan for $IMAGE"
 
-# Check Docker
 if ! command -v docker >/dev/null 2>&1; then
-  echo "❌ Docker not installed"
+  echo "Docker not installed"
   exit 1
 fi
 
-# Check if Docker image exists locally
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "⚠️ Image $IMAGE not found locally, skipping scan"
-  exit 0
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker daemon is not reachable"
+  exit 1
 fi
 
-# Check if Trivy exists
-# -------------------------------
-# Resolve trivy (no hardcoding)
-# -------------------------------
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "Image $IMAGE not found locally. Run ci/build.sh before security scanning."
+  exit 1
+fi
+
 TRIVY_BIN=""
 
 if command -v trivy >/dev/null 2>&1; then
@@ -31,24 +31,18 @@ if command -v trivy >/dev/null 2>&1; then
 elif command -v trivy.exe >/dev/null 2>&1; then
   TRIVY_BIN="$(command -v trivy.exe)"
 elif command -v where >/dev/null 2>&1; then
-  TRIVY_BIN="$(where trivy 2>/dev/null | head -n 1 | tr -d '\r')"
+  TRIVY_BIN="$(where trivy 2>/dev/null | head -n 1 | tr -d '\r' || true)"
 fi
 
-if [[ -z "$TRIVY_BIN" ]]; then
-  echo "⚠️ Trivy not installed. Run ./scripts/setup.sh"
+if [ -z "$TRIVY_BIN" ]; then
+  echo "Trivy not installed. Run ./scripts/setup.sh"
   exit 1
 fi
 
-# Run vulnerability scan
-trivy image \
+"$TRIVY_BIN" image \
   --severity HIGH,CRITICAL \
   --exit-code 1 \
   --no-progress \
   "$IMAGE"
 
-echo "✅ Security scan PASSED for $IMAGE"
-
-# Run scan
-"$TRIVY" image --severity HIGH,CRITICAL --exit-code 1 --no-progress "$IMAGE"
-
-echo "✅ Security scan PASSED for $IMAGE"
+echo "Security scan passed for $IMAGE"
