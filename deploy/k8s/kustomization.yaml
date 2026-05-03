@@ -9,9 +9,12 @@ resources:
   - base/networkpolicy.yaml
   - base/serviceaccount.yaml
 
-commonLabels:
-  app.kubernetes.io/managed-by: kustomize
-  app.kubernetes.io/part-of: microservice-platform
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: microservice-platform
+    includeSelectors: false
+    includeTemplates: true
 
 commonAnnotations:
   platform.io/deployment-model: kustomize
