@@ -6,6 +6,7 @@ bin/trivy.exe
 environments/*/env.example
 # Build artifacts
 artifacts/
+build/
 
 # binaries
 bin/
@@ -16,4 +17,4 @@ main
 
 # node
 node_modules/
-package-lock.json
+
