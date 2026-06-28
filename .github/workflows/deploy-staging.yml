@@ -138,17 +138,28 @@ jobs:
         id: target
         shell: bash
         run: |
-          if [ -f "services/${{ matrix.service }}/service.yml" ]; then
-            TYPE=$(grep '^target:' services/${{ matrix.service }}/service.yml | awk '{print $2}')
-            echo "type=$TYPE" >> $GITHUB_OUTPUT
-          elif [ -d deploy/k8s ]; then
-            echo "type=k8s" >> $GITHUB_OUTPUT
-          elif [ -d deploy/ecs ]; then
-            echo "type=ecs" >> $GITHUB_OUTPUT
-          else
-            echo "No deployment target found"
-            exit 1
+          TYPE="$(./ci/read-service-metadata.sh \
+              "${{ matrix.service }}" \
+              deploy.type 2>/dev/null || true)"
+
+          if [[ -z "$TYPE" ]]; then
+            TYPE="$(./ci/read-service-metadata.sh \
+                "${{ matrix.service }}" \
+                target 2>/dev/null || true)"
           fi
+
+          if [[ -z "$TYPE" ]]; then
+            if [[ -d deploy/k8s ]]; then
+              TYPE="k8s"
+            elif [[ -d deploy/ecs ]]; then
+              TYPE="ecs"
+            else
+              echo "No deployment target found"
+              exit 1
+            fi
+          fi
+
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Generic
         run: |
@@ -163,15 +174,19 @@ jobs:
         id: health
         shell: bash
         run: |
-          if [ -f "services/${{ matrix.service }}/service.yml" ]; then
-            PATH_CHECK=$(grep '^healthcheck:' services/${{ matrix.service }}/service.yml | awk '{print $2}')
+          PATH_CHECK="$(./ci/read-service-metadata.sh \
+              "${{ matrix.service }}" \
+              deploy.healthcheck 2>/dev/null || true)"
+
+          if [[ -z "$PATH_CHECK" ]]; then
+            PATH_CHECK="$(./ci/read-service-metadata.sh \
+                "${{ matrix.service }}" \
+                healthcheck 2>/dev/null || true)"
           fi
 
-          if [ -z "$PATH_CHECK" ]; then
-            PATH_CHECK="/health"
-          fi
+          PATH_CHECK="${PATH_CHECK:-/health}"
 
-          echo "path=$PATH_CHECK" >> $GITHUB_OUTPUT
+          echo "path=$PATH_CHECK" >> "$GITHUB_OUTPUT"
 
       - name: Readiness Check
         run: |
