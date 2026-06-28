@@ -164,14 +164,24 @@ jobs:
       - name: Health Check
         shell: bash
         run: |
-          if [ -f "services/${{ matrix.service }}/service.yml" ]; then
-            PATH_CHECK=$(grep '^healthcheck:' services/${{ matrix.service }}/service.yml | awk '{print $2}')
-          else
+          chmod +x ci/read-service-metadata.sh
+
+          PATH_CHECK="$(./ci/read-service-metadata.sh "${{ matrix.service }}" deploy.healthcheck 2>/dev/null || true)"
+
+          if [[ -z "$PATH_CHECK" ]]; then
+            PATH_CHECK="$(./ci/read-service-metadata.sh "${{ matrix.service }}" healthcheck 2>/dev/null || true)"
+          fi
+
+          if [[ -z "$PATH_CHECK" ]]; then
             PATH_CHECK="/health"
           fi
 
           chmod +x ci/smoke-test.sh
-          ci/smoke-test.sh "${{ matrix.service }}" "${PATH_CHECK}" "${{ env.ENVIRONMENT }}"
+
+          ci/smoke-test.sh \
+            "${{ matrix.service }}" \
+            "$PATH_CHECK" \
+            "${{ env.ENVIRONMENT }}"
 
       - name: Auto Rollback on Failure
         if: failure()
