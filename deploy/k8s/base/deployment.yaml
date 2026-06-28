@@ -29,12 +29,26 @@ spec:
     spec:
       serviceAccountName: ${SERVICE_NAME}
 
+      securityContext:
+        runAsNonRoot: ${RUN_AS_NON_ROOT}
+        runAsUser: ${RUN_AS_USER}
+        runAsGroup: ${RUN_AS_GROUP}
+        fsGroup: ${FS_GROUP}
+
       containers:
         - name: ${SERVICE_NAME}
 
           image: ${IMAGE_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}
 
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: ${IMAGE_PULL_POLICY}
+
+          securityContext:
+            allowPrivilegeEscalation: ${ALLOW_PRIVILEGE_ESCALATION}
+            readOnlyRootFilesystem: ${READ_ONLY_ROOT_FILESYSTEM}
+
+            capabilities:
+              drop:
+                - ${DROP_CAPABILITY}
 
           ports:
             - containerPort: ${CONTAINER_PORT}
