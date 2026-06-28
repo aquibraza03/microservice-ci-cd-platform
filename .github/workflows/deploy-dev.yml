@@ -21,6 +21,7 @@ permissions:
   deployments: write
   checks: write
   id-token: write
+  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
