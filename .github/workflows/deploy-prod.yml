@@ -29,6 +29,7 @@ permissions:
   deployments: write
   checks: write
   id-token: write
+  packages: write
 
 concurrency:
   group: deploy-prod-${{ github.event.inputs.service }}
@@ -62,27 +63,46 @@ jobs:
         id: target
         shell: bash
         run: |
-          if [ -f "services/${{ github.event.inputs.service }}/service.yml" ]; then
-            TYPE=$(grep '^target:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}')
-          elif [ -d deploy/k8s ]; then
-            TYPE="k8s"
-          elif [ -d deploy/ecs ]; then
-            TYPE="ecs"
-          else
-            echo "No deploy target found"
-            exit 1
+          TYPE="$(./ci/read-service-metadata.sh \
+              "${{ matrix.service }}" \
+              deploy.type 2>/dev/null || true)"
+
+          if [[ -z "$TYPE" ]]; then
+            TYPE="$(./ci/read-service-metadata.sh \
+                "${{ matrix.service }}" \
+                target 2>/dev/null || true)"
           fi
-          echo "type=$TYPE" >> $GITHUB_OUTPUT
+
+          if [[ -z "$TYPE" ]]; then
+            if [[ -d deploy/k8s ]]; then
+              TYPE="k8s"
+            elif [[ -d deploy/ecs ]]; then
+              TYPE="ecs"
+            else
+              echo "No deployment target found"
+              exit 1
+            fi
+          fi
+
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
 
       - name: Read Health Path
-        id: meta
+        id: health
         shell: bash
         run: |
-          PATH_CHECK=$(grep '^healthcheck:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}' || true)
-          if [ -z "$PATH_CHECK" ]; then
-            PATH_CHECK="/health"
+          PATH_CHECK="$(./ci/read-service-metadata.sh \
+              "${{ matrix.service }}" \
+              deploy.healthcheck 2>/dev/null || true)"
+
+          if [[ -z "$PATH_CHECK" ]]; then
+            PATH_CHECK="$(./ci/read-service-metadata.sh \
+                "${{ matrix.service }}" \
+                healthcheck 2>/dev/null || true)"
           fi
-          echo "health_path=$PATH_CHECK" >> $GITHUB_OUTPUT
+
+          PATH_CHECK="${PATH_CHECK:-/health}"
+
+          echo "path=$PATH_CHECK" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy Production
