@@ -19,43 +19,9 @@ This step is designed to orchestrate existing repo logic, not duplicate it.
 Uses:
 - ./deploy/deploy.sh
 - ./deploy/rollback.sh
-- ./ci/versioning.sh
-- ./ci/validate-service.sh
-- ./ci/smoke-test.sh
-- ./scripts/notify.sh
-
-Basic Usage:
-
-@Library('platform-lib') _
-
-deployPipeline()
-
-Parameterized Usage:
-
-deployPipeline(
-  env: 'dev',
-  service: 'auth-service',
-  image: 'ghcr.io/company/auth-service@sha256:abc123',
-  autoRollback: true,
-  requireApproval: true,
-  container: 'runner'
-)
-
-Supported Config:
-
-env
-  Target environment.
-  Values:
-  - dev
-  - staging
-  - prod
-
-service
-  Service folder under services/
-
-image
-  Optional image reference.
-  If omitted, resolves using ./ci/versioning.sh
+- ./ci/version.sh
+...
+  If omitted, resolves using ./ci/version.sh
 
 autoRollback
   true | false

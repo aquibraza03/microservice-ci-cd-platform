@@ -28,12 +28,14 @@ concurrency:
 
 env:
   NODE_VERSION: "20"
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
 
   preflight:
     name: Preflight Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -46,20 +48,16 @@ jobs:
       - name: Ensure Main Branch
         run: test "${GITHUB_REF_NAME}" = "main"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
       - name: Determine Release Type
         id: type
         shell: bash
         run: |
           TYPE="${{ github.event.inputs.release_type }}"
           if [ -z "$TYPE" ]; then
-            if git log -1 --pretty=%B | grep -q "BREAKING CHANGE"; then
+            MSG=$(git log -1 --pretty=%B)
+            if echo "$MSG" | grep -q "BREAKING CHANGE"; then
               TYPE="major"
-            elif git log -1 --pretty=%B | grep -q "^feat"; then
+            elif echo "$MSG" | grep -q "^feat"; then
               TYPE="minor"
             else
               TYPE="patch"
@@ -73,16 +71,13 @@ jobs:
         run: |
           LAST_TAG=$(git tag --sort=-v:refname | head -1)
           [ -z "$LAST_TAG" ] && LAST_TAG="v0.0.0"
-
           VERSION=${LAST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-
           case "${{ steps.type.outputs.type }}" in
             major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
             minor) MINOR=$((MINOR+1)); PATCH=0 ;;
             *) PATCH=$((PATCH+1)) ;;
           esac
-
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -90,6 +85,7 @@ jobs:
   detect-services:
     name: Detect Services
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
@@ -101,18 +97,17 @@ jobs:
         shell: bash
         run: |
           SERVICES=$(find services -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
-
           if [ -z "$SERVICES" ]; then
             echo "No services found"
             exit 1
           fi
-
           JSON=$(printf '%s\n' "$SERVICES" | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$JSON" >> $GITHUB_OUTPUT
 
   build:
     name: Build Release (${{ matrix.service }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - preflight
       - detect-services
@@ -128,15 +123,15 @@ jobs:
       - name: Verify Dockerfile
         run: test -f services/${{ matrix.service }}/Dockerfile
 
-      - name: Docker Login
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Build & Push Release Image
         uses: docker/build-push-action@v5
@@ -144,7 +139,36 @@ jobs:
           context: services/${{ matrix.service }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.service }}:${{ needs.preflight.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/${{ matrix.service }}:${{ needs.preflight.outputs.version }}
+            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+  tag-release:
+    name: Tag Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - preflight
+      - build
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git tag ${{ needs.preflight.outputs.tag }}
+          git push origin ${{ needs.preflight.outputs.tag }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          name: Release ${{ needs.preflight.outputs.version }}
+          generate_release_notes: true

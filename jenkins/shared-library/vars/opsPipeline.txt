@@ -18,7 +18,7 @@ It does not replace your existing shell automation.
 Uses Existing Repo Paths:
 - ./ci/security.sh
 - ./ci/dependency-update.sh
-- ./ci/versioning.sh
+- ./ci/version.sh
 - ./infra/terraform-plan.sh
 - ./infra/terraform-apply.sh
 - ./terraform/plan.sh

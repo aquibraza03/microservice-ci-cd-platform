@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-############################################
-# Config
-############################################
-
 SERVICE="${1:?Usage: $0 <service-name> [load|push] [image-prefix]}"
-MODE="${2:-load}"            # load | push
-BUILDER="multiarch-builder"
-SERVICES_DIR="services"
+MODE="${2:-load}"
+BUILDER="${BUILDER_NAME:-platform-builder}"
+SERVICES_DIR="${SERVICES_DIR:-services}"
 IMAGE_PREFIX="${3:-${IMAGE_PREFIX:-local}}"
-
-############################################
-# Colors (disabled if not TTY)
-############################################
 
 if [[ -t 1 ]]; then
   RED='\033[0;31m'
@@ -27,26 +19,14 @@ else
   NC=''
 fi
 
-############################################
-# Helpers
-############################################
-
 log()  { echo -e "${GREEN}[$(date +%H:%M:%S)]${NC} $*"; }
-warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
-err()  { echo -e "${RED}❌ $*${NC}" >&2; }
-
-############################################
-# Validate mode
-############################################
+warn() { echo -e "${YELLOW}WARNING: $*${NC}"; }
+err()  { echo -e "${RED}ERROR: $*${NC}" >&2; }
 
 if [[ "$MODE" != "load" && "$MODE" != "push" ]]; then
   err "Mode must be 'load' or 'push'"
   exit 1
 fi
-
-############################################
-# Paths
-############################################
 
 SERVICE_PATH="${SERVICES_DIR}/${SERVICE}"
 IMAGE="${IMAGE_PREFIX}/${SERVICE}"
@@ -61,37 +41,16 @@ if [[ ! -f "$SERVICE_PATH/Dockerfile" ]]; then
   exit 1
 fi
 
-############################################
-# Dependency checks
-############################################
-
-command -v docker >/dev/null || {
-  err "Docker not installed"
-  exit 1
-}
+command -v docker >/dev/null || { err "Docker not installed"; exit 1; }
 
 if ! docker buildx version >/dev/null 2>&1; then
   err "Docker buildx not available"
   exit 1
 fi
 
-if [[ ! -x ./ci/version.sh ]]; then
-  err "ci/version.sh missing or not executable"
-  exit 1
-fi
-
-############################################
-# Setup builder
-############################################
-
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
   log "Creating builder: $BUILDER"
-
-  if ! docker buildx create \
-    --name "$BUILDER" \
-    --driver docker-container \
-    --use; then
-
+  if ! docker buildx create --name "$BUILDER" --driver docker-container --use; then
     warn "Builder creation failed, falling back to default builder"
     docker buildx use default
   fi
@@ -102,10 +61,6 @@ fi
 log "Bootstrapping builder"
 docker buildx inspect --bootstrap >/dev/null
 
-############################################
-# Platform selection
-############################################
-
 if [[ "$MODE" == "push" ]]; then
   PLATFORM="linux/amd64,linux/arm64"
   OUTPUT="--push"
@@ -114,26 +69,23 @@ else
   OUTPUT="--load"
 fi
 
-############################################
-# Generate version tags
-############################################
+TAGS=()
+TAGS+=("$IMAGE:$IMAGE_TAG")
 
-mapfile -t VERSION_TAGS < <(./ci/version.sh)
+if [[ -n "${IMAGE_TAG_LATEST:-}" ]]; then
+  TAGS+=("$IMAGE:latest")
+fi
 
 TAG_ARGS=()
-for TAG in "${VERSION_TAGS[@]}"; do
-  TAG_ARGS+=("-t" "$IMAGE:$TAG")
+for TAG in "${TAGS[@]}"; do
+  TAG_ARGS+=("-t" "$TAG")
 done
-
-############################################
-# Build
-############################################
 
 log "Building service: $SERVICE"
 log "Image: $IMAGE"
 log "Platform: $PLATFORM"
 log "Mode: $MODE"
-log "Tags: ${#VERSION_TAGS[@]} tags generated"
+log "Tags: ${TAGS[*]}"
 
 docker buildx build \
   --platform "$PLATFORM" \
@@ -145,16 +97,11 @@ docker buildx build \
   "$OUTPUT" \
   "$SERVICE_PATH"
 
-############################################
-# Done
-############################################
-
-log "✅ Build completed"
+log "Build completed"
 
 echo
 echo "Images built:"
-for TAG in "${VERSION_TAGS[@]}"; do
-  echo "  $IMAGE:$TAG"
+for TAG in "${TAGS[@]}"; do
+  echo "  $TAG"
 done
 echo
-

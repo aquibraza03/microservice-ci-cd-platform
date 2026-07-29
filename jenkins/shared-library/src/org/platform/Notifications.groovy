@@ -1,6 +1,7 @@
 package org.platform
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 
 class Notifications implements Serializable {
 
@@ -10,7 +11,17 @@ class Notifications implements Serializable {
     this.steps = steps
   }
 
+  private Map loadConfig() {
+    try {
+      def raw = steps.libraryResource('notifications/slack.json')
+      return new JsonSlurper().parseText(raw)
+    } catch (err) {
+      return [:]
+    }
+  }
+
   void slack(Map cfg = [:]) {
+    def slackCfg = loadConfig()
 
     def webhook = cfg.webhook ?: steps.env.SLACK_WEBHOOK_URL
     if (!webhook?.trim()) {
@@ -19,48 +30,34 @@ class Notifications implements Serializable {
     }
 
     def status = (cfg.status ?: 'info').toLowerCase()
-    def title = cfg.title ?: 'Jenkins Notification'
+    def titles = slackCfg.titles ?: [:]
+    def colors = slackCfg.colors ?: [:]
+    def mentions = slackCfg.mentions ?: [:]
+
+    def title = cfg.title ?: titles[status] ?: 'Jenkins Notification'
     def message = cfg.message ?: 'Pipeline event'
-    def mention = cfg.mention ?: ''
-    def channel = cfg.channel ?: ''
+    def mention = cfg.mention ?: mentions[status] ?: ''
+    def channel = cfg.channel ?: (slackCfg.defaultChannel ?: '')
+    def username = cfg.username ?: (slackCfg.username ?: 'Jenkins')
+    def icon = cfg.icon ?: (slackCfg.icon ?: ':rocket:')
+    def footer = cfg.footer ?: (slackCfg.footer ?: 'CI/CD Notification')
 
-    def color = '#439FE0'
-
-    switch(status) {
-      case 'success':
-        color = 'good'
-        break
-      case 'warning':
-        color = 'warning'
-        break
-      case 'failure':
-        color = 'danger'
-        break
-    }
+    def color = colors[status] ?: '#439FE0'
 
     def payload = [
+      username   : username,
+      icon_emoji : icon,
       attachments: [[
-        color: color,
-        title: title,
+        color     : color,
+        title     : title,
         title_link: steps.env.BUILD_URL ?: '',
-        text: "${mention} ${message}".trim(),
-        fields: [
-          [
-            title: 'Job',
-            value: steps.env.JOB_NAME ?: 'unknown',
-            short: true
-          ],
-          [
-            title: 'Build',
-            value: steps.env.BUILD_NUMBER ?: '0',
-            short: true
-          ],
-          [
-            title: 'Branch',
-            value: steps.env.BRANCH_NAME ?: 'unknown',
-            short: true
-          ]
-        ]
+        text      : "${mention} ${message}".trim(),
+        fields    : [
+          [title: 'Job', value: steps.env.JOB_NAME ?: 'unknown', short: true],
+          [title: 'Build', value: steps.env.BUILD_NUMBER ?: '0', short: true],
+          [title: 'Branch', value: steps.env.BRANCH_NAME ?: 'unknown', short: true]
+        ],
+        footer    : footer
       ]]
     ]
 
@@ -78,7 +75,6 @@ class Notifications implements Serializable {
   }
 
   void email(Map cfg = [:]) {
-
     def to = cfg.to ?: ''
     if (!to?.trim()) {
       steps.echo("Email recipients missing. Skip.")
@@ -96,7 +92,6 @@ class Notifications implements Serializable {
   }
 
   void pipelineStatus(String status, String message) {
-
     slack(
       status: status,
       title: "Pipeline ${status.toUpperCase()}",
@@ -105,7 +100,6 @@ class Notifications implements Serializable {
   }
 
   void approvalNeeded(String message) {
-
     slack(
       status: 'warning',
       title: 'Approval Required',
@@ -115,7 +109,6 @@ class Notifications implements Serializable {
   }
 
   void failure(String message) {
-
     slack(
       status: 'failure',
       title: 'Pipeline Failed',
@@ -125,7 +118,6 @@ class Notifications implements Serializable {
   }
 
   void success(String message) {
-
     slack(
       status: 'success',
       title: 'Pipeline Succeeded',

@@ -1,0 +1,19 @@
+{
+  "enabled": false,
+  "reason": "Change freeze active - no deployments permitted",
+  "freezeWindows": [
+    {
+      "start": "2026-12-15T00:00:00Z",
+      "end": "2027-01-05T00:00:00Z",
+      "reason": "Year-end freeze"
+    },
+    {
+      "start": "2026-06-01T00:00:00Z",
+      "end": "2026-06-05T00:00:00Z",
+      "reason": "Quarter-end freeze"
+    }
+  ],
+  "allowedServices": [],
+  "overrideGroups": ["sre", "release-managers"],
+  "notifyChannels": ["#platform-alerts", "#sre-oncall"]
+}

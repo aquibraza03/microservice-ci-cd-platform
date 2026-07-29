@@ -1,0 +1,12 @@
+{
+  "name": "platform-smoke-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Platform validation smoke test service",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node -e \"require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))\""
+  },
+  "license": "MIT"
+}

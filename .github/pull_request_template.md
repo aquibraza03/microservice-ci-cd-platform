@@ -1,97 +1,44 @@
-# -----------------------------------------------------------------------------
-# CODEOWNERS
-# Enterprise ownership model for monorepo / platform repository
-# Order matters: last matching rule wins
-# -----------------------------------------------------------------------------
+# Pull Request Template
 
-# Global fallback owners
-*                                   @aquibraza03
+## Description
 
-# -----------------------------------------------------------------------------
-# GitHub Governance
-# -----------------------------------------------------------------------------
+Please include a summary of the change and which issue is fixed.
 
-.github/                            @aquibraza03
-.github/workflows/                  @aquibraza03
-.github/actions/                    @aquibraza03
+## Type of Change
 
-# Security-sensitive files
-.github/workflows/security.yml      @aquibraza03
-.github/workflows/deploy-prod.yml   @aquibraza03
-.github/workflows/rollback.yml      @aquibraza03
-.github/workflows/hotfix.yml        @aquibraza03
+- [ ] Bug fix (non-breaking change that fixes an issue)
+- [ ] New feature (non-breaking change that adds functionality)
+- [ ] Breaking change (fix or feature that causes existing functionality to not work as expected)
+- [ ] Documentation update
+- [ ] CI/CD or infrastructure change
+- [ ] Dependency update
 
-# -----------------------------------------------------------------------------
-# Infrastructure / Terraform
-# -----------------------------------------------------------------------------
+## Testing
 
-infra/                              @aquibraza03
-terraform/                          @aquibraza03
-environments/                       @aquibraza03
+- [ ] Unit tests pass
+- [ ] Integration tests pass
+- [ ] Manual testing completed
 
-# Production environment protection
-environments/prod/                  @aquibraza03
-environments/staging/               @aquibraza03
+## Checklist
 
-# -----------------------------------------------------------------------------
-# Kubernetes / Deployment Manifests
-# -----------------------------------------------------------------------------
+- [ ] My code follows the project's coding standards
+- [ ] I have updated the documentation accordingly
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] All new and existing tests pass
+- [ ] I have checked for potential security issues
+- [ ] I have verified the change does not break existing deployments
 
-k8s/                                @aquibraza03
-helm/                               @aquibraza03
-deploy/                             @aquibraza03
+## Deployment Notes
 
-# -----------------------------------------------------------------------------
-# Shared Platform Code
-# -----------------------------------------------------------------------------
+- [ ] Requires database migration
+- [ ] Requires configuration change
+- [ ] Requires rolling restart
+- [ ] No deployment impact
 
-packages/                           @aquibraza03
-libs/                               @aquibraza03
-shared/                             @aquibraza03
+## Related Issues
 
-# -----------------------------------------------------------------------------
-# Services Ownership
-# -----------------------------------------------------------------------------
+Fixes #
 
-services/auth-service/              @aquibraza03
-services/orders-service/            @aquibraza03
-services/payments-service/          @aquibraza03
-services/notification-service/      @aquibraza03
+## Additional Context
 
-# Catch-all for future services
-services/                           @aquibraza03
-
-# -----------------------------------------------------------------------------
-# CI / Test Ownership
-# -----------------------------------------------------------------------------
-
-tests/                              @aquibraza03
-ci/                                 @aquibraza03
-scripts/                            @aquibraza03
-
-# -----------------------------------------------------------------------------
-# Documentation
-# -----------------------------------------------------------------------------
-
-docs/                               @aquibraza03
-*.md                                @aquibraza03
-
-# -----------------------------------------------------------------------------
-# Config Files
-# -----------------------------------------------------------------------------
-
-Dockerfile                          @aquibraza03
-docker-compose.yml                  @aquibraza03
-package.json                        @aquibraza03
-package-lock.json                   @aquibraza03
-requirements.txt                    @aquibraza03
-pyproject.toml                      @aquibraza03
-go.mod                              @aquibraza03
-go.sum                              @aquibraza03
-
-# -----------------------------------------------------------------------------
-# Emergency / High Risk Paths
-# -----------------------------------------------------------------------------
-
-prod/                               @aquibraza03
-secrets/                            @aquibraza03
+Add any other context about the pull request here.

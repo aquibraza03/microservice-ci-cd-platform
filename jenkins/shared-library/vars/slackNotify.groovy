@@ -1,35 +1,36 @@
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 
 def call(Map config = [:]) {
 
   def webhook = config.webhook ?: env.SLACK_WEBHOOK_URL
-  def status = (config.status ?: 'info').toLowerCase()
-  def title = config.title ?: 'Jenkins Notification'
-  def message = config.message ?: 'Pipeline event'
-  def channel = config.channel ?: ''
-  def username = config.username ?: 'Jenkins'
-  def icon = config.icon ?: ':rocket:'
-  def mention = config.mention ?: ''
-  def footer = config.footer ?: 'CI/CD Notification'
-
   if (!webhook?.trim()) {
     echo "Slack webhook not configured. Skipping notification."
     return
   }
 
-  def color = '#439FE0'
-
-  switch (status) {
-    case 'success':
-      color = 'good'
-      break
-    case 'warning':
-      color = 'warning'
-      break
-    case 'failure':
-      color = 'danger'
-      break
+  def slackCfg = [:]
+  try {
+    def raw = libraryResource('notifications/slack.json')
+    slackCfg = new JsonSlurper().parseText(raw)
+  } catch (err) {
+    slackCfg = [:]
   }
+
+  def status = (config.status ?: 'info').toLowerCase()
+  def title = config.title ?: (slackCfg.titles ?: [:])[status] ?: 'Jenkins Notification'
+  def message = config.message ?: 'Pipeline event'
+  def channel = config.channel ?: (slackCfg.defaultChannel ?: '')
+  def username = config.username ?: (slackCfg.username ?: 'Jenkins')
+  def icon = config.icon ?: (slackCfg.icon ?: ':rocket:')
+  def mention = config.mention ?: ''
+  def footer = config.footer ?: (slackCfg.footer ?: 'CI/CD Notification')
+
+  def colors = slackCfg.colors ?: [:]
+  def color = colors[status] ?: '#439FE0'
+
+  def mentions = slackCfg.mentions ?: [:]
+  def resolvedMention = mention ?: (mentions[status] ?: '')
 
   def runUrl = env.BUILD_URL ?: ''
   def repo = env.JOB_NAME ?: 'unknown'
@@ -43,7 +44,7 @@ def call(Map config = [:]) {
       color     : color,
       title     : title,
       title_link: runUrl,
-      text      : "${mention} ${message}".trim(),
+      text      : "${resolvedMention} ${message}".trim(),
       fields    : [
         [title: 'Job', value: repo, short: true],
         [title: 'Build', value: build, short: true],

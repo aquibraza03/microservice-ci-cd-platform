@@ -159,7 +159,7 @@ def call(Map config = [:]) {
           container(defaultContainer) {
             script {
               env.VERSION = sh(
-                script: './ci/versioning.sh',
+                script: './ci/version.sh',
                 returnStdout: true
               ).trim()
             }

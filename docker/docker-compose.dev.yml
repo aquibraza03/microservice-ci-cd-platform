@@ -4,10 +4,17 @@ services:
     build:
       context: ../services/${SERVICE_NAME}
       dockerfile: ${DOCKERFILE_PATH:-Dockerfile}
+      args:
+        SERVICE_NAME: ${SERVICE_NAME}
+        SERVICE_VERSION: ${IMAGE_TAG:-dev}
 
     image: ${IMAGE_REGISTRY:-local}/${SERVICE_NAME}:${IMAGE_TAG:-dev}
 
     container_name: ${SERVICE_NAME}-dev
+
+    restart: unless-stopped
+
+    init: true
 
     ports:
       - "${SERVICE_PORT:-3000}:${CONTAINER_PORT:-3000}"
@@ -19,19 +26,47 @@ services:
       REDIS_HOST: redis
 
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:${CONTAINER_PORT:-3000}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
     networks:
       - platform-network
 
+    deploy:
+      resources:
+        limits:
+          cpus: "${SERVICE_CPU_LIMIT:-1.0}"
+          memory: "${SERVICE_MEM_LIMIT:-512M}"
+        reservations:
+          cpus: "${SERVICE_CPU_RES:-0.25}"
+          memory: "${SERVICE_MEM_RES:-128M}"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 
   postgres:
-    image: postgres:${POSTGRES_VERSION:-15}
+    image: postgres:${POSTGRES_VERSION:-15-alpine}
+
+    container_name: platform-postgres
+
+    restart: unless-stopped
 
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dev}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-platform}
 
     ports:
@@ -40,26 +75,74 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
     networks:
       - platform-network
 
+    deploy:
+      resources:
+        limits:
+          cpus: "${POSTGRES_CPU_LIMIT:-2.0}"
+          memory: "${POSTGRES_MEM_LIMIT:-1G}"
+        reservations:
+          cpus: "${POSTGRES_CPU_RES:-0.5}"
+          memory: "${POSTGRES_MEM_RES:-256M}"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 
   redis:
-    image: redis:${REDIS_VERSION:-7}
+    image: redis:${REDIS_VERSION:-7-alpine}
+
+    container_name: platform-redis
+
+    restart: unless-stopped
 
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
     networks:
       - platform-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPU_LIMIT:-1.0}"
+          memory: "${REDIS_MEM_LIMIT:-512M}"
+        reservations:
+          cpus: "${REDIS_CPU_RES:-0.25}"
+          memory: "${REDIS_MEM_RES:-128M}"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 
 networks:
   platform-network:
     driver: bridge
+    name: platform-network
 
 
 volumes:
   postgres-data:
-
-
+    name: platform-postgres-data

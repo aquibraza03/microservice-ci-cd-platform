@@ -68,16 +68,16 @@ flowchart LR
 Run a full service lifecycle in minutes:
 
 ```bash
-ci/test.sh web-test-service
-REGISTRY=local ci/build.sh web-test-service dev
-deploy/k8s/deploy.sh web-test-service
+ci/test.sh auth-service
+REGISTRY=local ci/build.sh auth-service dev
+deploy/k8s/deploy.sh auth-service
 ```
 
 ---
 
 ## 🧪 Platform Validation
 
-`web-test-service` exists to validate the platform.
+`auth-service` is the primary service for validating the platform.
 
 It proves:
 
@@ -92,7 +92,14 @@ It proves:
 | `/health` | Liveness       |
 | `/ready`  | Readiness      |
 
-⚠️ `auth-service` is intentionally **non-production demo code**
+Services currently in the repository:
+
+| Service | Language | Status |
+|---------|----------|--------|
+| auth-service | Node.js | Active |
+| platform-smoke-test | Node.js | Active |
+| orders-service | - | Coming soon |
+| payments-service | - | Coming soon |
 
 ---
 
@@ -165,7 +172,7 @@ CONTAINER_PORT=3000
 ### Deploy
 
 ```bash
-deploy/k8s/deploy.sh web-test-service
+deploy/k8s/deploy.sh auth-service
 ```
 
 ---
@@ -176,10 +183,10 @@ Render manifests without a cluster:
 
 ```bash
 RENDER_ONLY=true \
-RENDER_OUTPUT_DIR=build/rendered/web-test-service \
-deploy/k8s/deploy.sh web-test-service
+RENDER_OUTPUT_DIR=build/rendered/auth-service \
+deploy/k8s/deploy.sh auth-service
 
-kubectl kustomize build/rendered/web-test-service
+kubectl kustomize build/rendered/auth-service
 ```
 
 ---
@@ -187,7 +194,7 @@ kubectl kustomize build/rendered/web-test-service
 ## 🌐 Runtime Verification
 
 ```bash
-kubectl port-forward svc/web-test-service 8080:80
+kubectl port-forward svc/auth-service 8080:80
 
 curl http://localhost:8080/
 curl http://localhost:8080/health

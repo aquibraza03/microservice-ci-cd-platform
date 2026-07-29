@@ -1,20 +1,41 @@
+# Security scan artifacts
 trivy/
-bin/trivy.exe
-*.zip
-.env.local
+
+# Downloads
+bin/
+*.exe
+
 # Generated env files
 environments/*/env.example
+
 # Build artifacts
 artifacts/
 build/
 
-# binaries
-bin/
-*.exe
-
-# local build output
+# Local build output
 main
 
-# node
+# Dependencies
 node_modules/
+vendor/
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment overrides
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
 

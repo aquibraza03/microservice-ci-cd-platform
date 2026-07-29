@@ -100,8 +100,8 @@ def call(Map config = [:]) {
                         ./ci/validate-service.sh ${serviceName}
                       fi
 
-                      if [ -f ./ci/versioning.sh ]; then
-                        ./ci/versioning.sh ${serviceName}
+                      if [ -f ./ci/version.sh ]; then
+                        ./ci/version.sh ${serviceName}
                       fi
 
                       if [ -f ./ci/build.sh ]; then

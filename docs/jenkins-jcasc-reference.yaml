@@ -1,0 +1,133 @@
+# Reference Configuration as Code (JCasC) for Jenkins Master
+# Place in $JENKINS_HOME/jenkins.yaml or use Configuration-as-Code plugin
+# This file documents the required Jenkins configuration for this platform
+
+jenkins:
+  systemMessage: "Microservice CI/CD Platform - Managed by JCasC"
+
+  authorizationStrategy:
+    globalMatrix:
+      grantedPermissions:
+        - "Overall/Administer:admin"
+        - "Overall/Read:authenticated"
+        - "Job/Read:authenticated"
+        - "Job/Build:developers"
+        - "Job/Cancel:developers"
+        - "Run/Update:developers"
+        - "View/Read:authenticated"
+
+  numExecutors: 0
+
+  clouds:
+    - kubernetes:
+        name: "kubernetes"
+        serverUrl: "https://kubernetes.default.svc"
+        skipTlsVerify: false
+        jenkinsUrl: "http://jenkins:8080"
+        namespace: "jenkins"
+        podRetention: "never"
+        maxRequestsPerHostStr: "32"
+        templates:
+          - yaml: |
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                labels:
+                  app: ci-agent
+              spec:
+                serviceAccountName: jenkins
+                containers:
+                  - name: runner
+                    image: jenkins/inbound-agent:latest
+                    imagePullPolicy: IfNotPresent
+                    command: ["cat"]
+                    tty: true
+                    resources:
+                      requests:
+                        cpu: "500m"
+                        memory: "512Mi"
+                      limits:
+                        cpu: "2000m"
+                        memory: "2048Mi"
+                    env:
+                      - name: CI
+                        value: "true"
+                  - name: docker
+                    image: docker:dind
+                    command: ["dockerd-entrypoint.sh"]
+                    securityContext:
+                      privileged: true
+                    resources:
+                      requests:
+                        cpu: "500m"
+                        memory: "512Mi"
+                      limits:
+                        cpu: "4000m"
+                        memory: "4096Mi"
+                    env:
+                      - name: DOCKER_TLS_CERTDIR
+                        value: ""
+                imagePullSecrets:
+                  - name: jenkins-docker-registry
+                restartPolicy: Never
+
+unclassified:
+  location:
+    url: "http://jenkins:8080"
+
+  globalLibraries:
+    libraries:
+      - name: "platform-shared-library"
+        defaultVersion: "main"
+        implicit: false
+        allowVersionOverride: true
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "https://github.com/org/platform.git"
+                traits:
+                  - "gitBranchDiscovery"
+                  - "cleanBeforeCheckout"
+                scriptPath: "jenkins/shared-library"
+
+  mailer:
+    charset: "UTF-8"
+    defaultSuffix: "@platform.com"
+    replyToAddress: "jenkins@platform.com"
+    smtpHost: "smtp.platform.com"
+    smtpPort: "587"
+    useSsl: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "SLACK_WEBHOOK_URL"
+              description: "Slack webhook for notifications"
+              secret: "${SLACK_WEBHOOK_SECRET}"
+          - string:
+              scope: GLOBAL
+              id: "GITHUB_TOKEN"
+              description: "GitHub API token"
+              secret: "${GITHUB_TOKEN_SECRET}"
+          - usernamePassword:
+              scope: GLOBAL
+              id: "DOCKER_REGISTRY"
+              description: "Container registry credentials"
+              username: "${REGISTRY_USERNAME}"
+              password: "${REGISTRY_PASSWORD}"
+          - file:
+              scope: GLOBAL
+              id: "KUBECONFIG"
+              description: "Kubernetes cluster config"
+              fileName: "kubeconfig"
+              secretBytes: "${KUBECONFIG_B64}"
+
+tool:
+  git:
+    installations:
+      - name: "Default"
+        home: "/usr/bin/git"

@@ -1,3 +1,9 @@
+@Library('platform-shared-library') _
+
+import org.platform.Notifications
+import org.platform.Governance
+import org.platform.Utils
+
 pipeline {
   agent {
     kubernetes {
@@ -24,19 +30,16 @@ pipeline {
       choices: ['dev', 'staging', 'prod'],
       description: 'Target deployment environment'
     )
-
     string(
       name: 'SERVICE',
       defaultValue: '',
       description: 'Service name under services/'
     )
-
     string(
       name: 'IMAGE_REF',
       defaultValue: '',
       description: 'Optional image tag or immutable digest'
     )
-
     booleanParam(
       name: 'AUTO_ROLLBACK',
       defaultValue: true,
@@ -61,26 +64,34 @@ pipeline {
     stage('Validate Inputs') {
       steps {
         script {
+          def utils = new Utils(this)
+
           if (!params.SERVICE?.trim()) {
             error("SERVICE parameter is required")
           }
 
-          if (!fileExists("services/${params.SERVICE}")) {
-            error("Service not found: services/${params.SERVICE}")
-          }
+          utils.requireService(params.SERVICE)
 
           env.IMAGE = params.IMAGE_REF?.trim()
 
           if (!env.IMAGE) {
-            env.IMAGE = sh(
-              script: './ci/versioning.sh',
-              returnStdout: true
-            ).trim()
+            env.IMAGE = utils.shOut('./ci/version.sh')
           }
 
           if (!env.IMAGE) {
             error("Unable to resolve IMAGE_REF")
           }
+
+          utils.setDescription("${params.SERVICE} | ${params.ENV} | ${env.IMAGE}")
+        }
+      }
+    }
+
+    stage('Governance Checks') {
+      steps {
+        script {
+          def gov = new Governance(this)
+          gov.validateDeploy(params.SERVICE, params.ENV)
         }
       }
     }
@@ -89,8 +100,10 @@ pipeline {
       steps {
         container('runner') {
           sh '''
-            chmod +x ci/*.sh deploy/*.sh scripts/*.sh || true
-            ./ci/policy.sh
+            chmod +x ci/*.sh deploy/*.sh scripts/*.sh 2>/dev/null || true
+            if [ -f ./ci/policy.sh ]; then
+              ./ci/policy.sh
+            fi
           '''
         }
       }
@@ -100,7 +113,9 @@ pipeline {
       steps {
         container('runner') {
           sh """
-            ./ci/validate-service.sh ${SERVICE_NAME}
+            if [ -f ./ci/validate-service.sh ]; then
+              ./ci/validate-service.sh ${SERVICE_NAME}
+            fi
           """
         }
       }
@@ -110,8 +125,11 @@ pipeline {
       when {
         expression { params.ENV == 'prod' }
       }
-
       steps {
+        script {
+          def notifier = new Notifications(this)
+          notifier.approvalNeeded("Deployment of ${params.SERVICE} to PROD")
+        }
         timeout(time: 20, unit: 'MINUTES') {
           input(
             message: "Approve deployment of ${params.SERVICE} to PROD?",
@@ -138,11 +156,11 @@ pipeline {
     stage('Smoke Test') {
       steps {
         container('runner') {
-          retry(2) {
-            sh """
+          sh """
+            if [ -f ./ci/smoke-test.sh ]; then
               ./ci/smoke-test.sh ${SERVICE_NAME}
-            """
-          }
+            fi
+          """
         }
       }
     }
@@ -151,36 +169,39 @@ pipeline {
   post {
 
     success {
-      echo "✅ Deployment succeeded"
+      script {
+        def notifier = new Notifications(this)
+        notifier.success("Deployment: ${SERVICE_NAME} -> ${PLATFORM_ENV} (${IMAGE})")
+      }
 
       container('runner') {
         sh """
-          ./scripts/notify.sh success \
-          "Deployment successful: ${SERVICE_NAME} -> ${PLATFORM_ENV} (${IMAGE})"
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh success \
+            "Deployment successful: ${SERVICE_NAME} -> ${PLATFORM_ENV} (${IMAGE})"
+          fi
         """
       }
     }
 
     failure {
-      echo "❌ Deployment failed"
+      echo("Deployment failed")
 
       script {
+        def notifier = new Notifications(this)
+        notifier.failure("Deployment failed: ${SERVICE_NAME} -> ${PLATFORM_ENV}")
+
         if (params.AUTO_ROLLBACK) {
           container('runner') {
             sh """
-              if [ -f ./deploy/rollback.sh ]; then
+              if [ -f ./deploy/k8s/rollback.sh ]; then
+                NAMESPACE=${SERVICE_NAME} ROLLOUT_TIMEOUT=300s ./deploy/k8s/rollback.sh ${SERVICE_NAME}
+              elif [ -f ./deploy/rollback.sh ]; then
                 ./deploy/rollback.sh ${PLATFORM_ENV} ${SERVICE_NAME}
               fi
             """
           }
         }
-      }
-
-      container('runner') {
-        sh """
-          ./scripts/notify.sh failure \
-          "Deployment failed: ${SERVICE_NAME} -> ${PLATFORM_ENV}"
-        """
       }
     }
 

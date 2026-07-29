@@ -13,7 +13,6 @@ on:
       - Rollback
     types:
       - completed
-
   workflow_dispatch:
     inputs:
       status:
@@ -36,8 +35,6 @@ on:
 permissions:
   actions: read
   contents: read
-  checks: write
-  pull-requests: write
 
 concurrency:
   group: notify-${{ github.workflow }}-${{ github.run_id }}
@@ -62,7 +59,6 @@ jobs:
           ACTOR="${{ github.event.workflow_run.actor.login }}"
           RUN_ID="${{ github.event.workflow_run.run_number }}"
 
-          # Status emojis for visual priority
           case $STATUS in
             success) EMOJI=":white_check_mark:" ;;
             failure) EMOJI=":fire: :rotating_light:" ;;
@@ -93,7 +89,6 @@ jobs:
           TITLE="${{ github.event.inputs.title }}"
           MESSAGE="${{ github.event.inputs.message }}"
 
-          # Status emojis
           case $STATUS in
             success) EMOJI=":white_check_mark:" ;;
             failure) EMOJI=":fire: :rotating_light:" ;;
@@ -180,39 +175,23 @@ jobs:
         run: |
           curl -X POST "$PD_URL/v2/enqueue" \
             -H "Content-type: application/json" \
-            -d "{
-              \"routing_key\": \"$INTEGRATION_KEY\",
-              \"event_action\": \"trigger\",
-              \"payload\": {
-                \"summary\": \"${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.title }}\",
-                \"severity\": \"critical\",
-                \"source\": \"GitHub Actions\",
-                \"component\": \"${{ github.repository }}\",
-                \"details\": {
-                  \"message\": \"${{ steps.data.outputs.message }}\",
-                  \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            -d '{
+              "routing_key": "'"$INTEGRATION_KEY"'",
+              "event_action": "trigger",
+              "payload": {
+                "summary": "${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.title }}",
+                "severity": "critical",
+                "source": "GitHub Actions",
+                "component": "${{ github.repository }}",
+                "details": {
+                  "message": "${{ steps.data.outputs.message }}",
+                  "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                 }
               }
-            }"
-
-      - name: Email Notification (High Priority Failures)
-        if: secrets.SMTP_HOST != '' && steps.data.outputs.status == 'failure'
-        env:
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT || 587 }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-        shell: bash
-        run: |
-          # Placeholder for SMTP integration
-          echo "Email sent to oncall team: ${{ steps.data.outputs.title }}"
+            }'
 
       - name: GitHub Summary
         run: |
-          echo "## 🚨 Notifications Sent" >> $GITHUB_STEP_SUMMARY
-          echo "- **Title**: ${{ steps.data.outputs.title }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: ${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Channels**: Slack${{ secrets.SLACK_WEBHOOK_URL != '' && ' ✓' || '' }} | Teams${{ secrets.TEAMS_WEBHOOK_URL != '' && ' ✓' || '' }} | Discord${{ secrets.DISCORD_WEBHOOK_URL != '' && ' ✓' || '' }}" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.data.outputs.status }}" = "failure" ]; then
-            echo "- **PagerDuty**: Triggered 🚨" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "## Notifications Sent" >> $GITHUB_STEP_SUMMARY
+          echo "- Title: ${{ steps.data.outputs.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.status }}" >> $GITHUB_STEP_SUMMARY

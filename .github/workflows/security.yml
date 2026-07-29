@@ -27,19 +27,18 @@ concurrency:
 env:
   NODE_VERSION: "20"
   TF_VERSION: "1.9.7"
-  TRIVY_VERSION: "0.28.0"
 
 jobs:
 
   detect-services:
     name: Detect Services
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -60,10 +59,10 @@ jobs:
   secret-scan:
     name: Secret Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -73,6 +72,7 @@ jobs:
   dependency-scan:
     name: Dependency Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: detect-services
 
     strategy:
@@ -81,40 +81,43 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Detect Node Project
-        id: node
-        shell: bash
-        run: |
-          if [ -f "services/${{ matrix.service }}/package.json" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup Node
-        if: steps.node.outputs.exists == 'true'
-        uses: actions/setup-node@v4
+      - name: Setup Dependencies
+        id: deps
+        uses: ./.github/actions/setup-deps
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+          service: ${{ matrix.service }}
 
-      - name: Install Dependencies
-        if: steps.node.outputs.exists == 'true'
+      - name: Install Node Dependencies
+        if: steps.deps.outputs.type == 'node'
         working-directory: services/${{ matrix.service }}
         run: npm ci
 
       - name: npm Audit
-        if: steps.node.outputs.exists == 'true'
+        if: steps.deps.outputs.type == 'node'
         working-directory: services/${{ matrix.service }}
         run: npm audit --audit-level=high
+
+      - name: pip Audit
+        if: steps.deps.outputs.type == 'python'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+          pip-audit
+
+      - name: Go Vuln Check
+        if: steps.deps.outputs.type == 'go'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   codeql:
     name: CodeQL
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -125,8 +128,7 @@ jobs:
           - go
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Init CodeQL
         uses: github/codeql-action/init@v3
@@ -142,6 +144,7 @@ jobs:
   container-scan:
     name: Container Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: detect-services
 
     strategy:
@@ -150,12 +153,10 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Check Dockerfile
         id: dockerfile
-        shell: bash
         run: |
           if [ -f "services/${{ matrix.service }}/Dockerfile" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -196,20 +197,31 @@ jobs:
   terraform-security:
     name: Terraform Security
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Terraform
+      - name: Check Terraform Directory
+        id: check
+        run: |
+          if [ -d terraform ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.check.outputs.exists == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
+        if: steps.check.outputs.exists == 'true'
         run: terraform -chdir=terraform init -backend=false
 
-      - name: Checkov
+      - name: Checkov Scan
+        if: steps.check.outputs.exists == 'true'
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: terraform
@@ -220,10 +232,10 @@ jobs:
   sbom:
     name: Generate SBOM
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
@@ -241,6 +253,7 @@ jobs:
     name: Security Summary
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs:
       - secret-scan
       - dependency-scan
@@ -253,9 +266,9 @@ jobs:
       - name: Publish Summary
         run: |
           echo "## Security Pipeline Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- Secrets scanned" >> $GITHUB_STEP_SUMMARY
-          echo "- Dependencies audited" >> $GITHUB_STEP_SUMMARY
-          echo "- Static analysis complete" >> $GITHUB_STEP_SUMMARY
-          echo "- Containers scanned" >> $GITHUB_STEP_SUMMARY
-          echo "- Terraform checked" >> $GITHUB_STEP_SUMMARY
-          echo "- SBOM generated" >> $GITHUB_STEP_SUMMARY
+          echo "- Secret scan: ${{ needs.secret-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency audit: ${{ needs.dependency-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CodeQL: ${{ needs.codeql.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Container scan: ${{ needs.container-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Terraform security: ${{ needs.terraform-security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM: ${{ needs.sbom.result }}" >> $GITHUB_STEP_SUMMARY

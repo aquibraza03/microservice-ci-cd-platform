@@ -1,0 +1,66 @@
+# Version control
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+
+# CI/CD
+.jenkins/
+jenkins/
+.github/
+
+# Docker internals
+Dockerfile
+.dockerignore
+README*.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+target/
+*.zip
+*.tar.gz
+*.exe
+
+# Environment
+.env
+.env.*
+*.env.local
+*.env.example
+
+# Documentation and platform
+docs/
+platform/
+scripts/
+ops/
+
+# Terraform
+terraform/
+environments/
+*.tf
+*.tfvars
+*.tfplan
+
+# Kubernetes
+deploy/
+
+# Templates (not for production images)
+templates/
+
+# CI artifacts
+artifacts/
+reports/
+coverage*
+junit*
+*.xml
+*.sarif

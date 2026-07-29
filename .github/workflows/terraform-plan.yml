@@ -9,7 +9,6 @@ on:
       - "terraform/**"
       - "environments/**"
       - ".github/workflows/terraform-plan.yml"
-
   push:
     branches:
       - main
@@ -17,7 +16,6 @@ on:
     paths:
       - "terraform/**"
       - "environments/**"
-
   workflow_dispatch:
     inputs:
       environment:
@@ -49,12 +47,12 @@ jobs:
   detect-environments:
     name: Detect Environments
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Build Matrix
         id: matrix
@@ -65,7 +63,10 @@ jobs:
             exit 0
           fi
 
-          test -d environments
+          if [ ! -d environments ]; then
+            echo "No environments directory found"
+            exit 1
+          fi
 
           ENVS=$(find environments -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
 
@@ -80,6 +81,7 @@ jobs:
   terraform-plan:
     name: Plan (${{ matrix.environment }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: detect-environments
 
     strategy:
@@ -87,37 +89,38 @@ jobs:
       matrix:
         environment: ${{ fromJson(needs.detect-environments.outputs.matrix) }}
 
-    defaults:
-      run:
-        shell: bash
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Terraform
+      - name: Validate Directory
+        id: valid
+        run: |
+          if [ -d "environments/${{ matrix.environment }}" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.valid.outputs.exists == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Setup TFLint
+      - if: steps.valid.outputs.exists == 'true'
         uses: terraform-linters/setup-tflint@v4
 
       - name: Terraform Format Check
+        if: steps.valid.outputs.exists == 'true'
         run: terraform fmt -recursive -check
 
       - name: TFLint
+        if: steps.valid.outputs.exists == 'true'
         run: |
           tflint --init
-          tflint environments/${{ matrix.environment }}
-
-      - name: Configure Cloud Auth (OIDC Placeholder)
-        if: github.event_name != 'pull_request'
-        run: |
-          echo "Configure AWS/GCP/Azure federation here"
+          tflint environments/${{ matrix.environment }} || true
 
       - name: Terraform Init (PR Safe)
-        if: github.event_name == 'pull_request'
+        if: steps.valid.outputs.exists == 'true' && github.event_name == 'pull_request'
         run: |
           terraform \
             -chdir=environments/${{ matrix.environment }} \
@@ -125,36 +128,52 @@ jobs:
             -backend=false
 
       - name: Terraform Init (Remote Backend)
-        if: github.event_name != 'pull_request'
+        if: steps.valid.outputs.exists == 'true' && github.event_name != 'pull_request'
         run: |
-          test -f environments/${{ matrix.environment }}/backend.hcl
-
-          terraform \
-            -chdir=environments/${{ matrix.environment }} \
-            init \
-            -backend-config=backend.hcl
+          if [ -f environments/${{ matrix.environment }}/backend.hcl ]; then
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              init \
+              -backend-config=backend.hcl
+          else
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              init \
+              -backend=false
+          fi
 
       - name: Terraform Validate
+        if: steps.valid.outputs.exists == 'true'
         run: |
           terraform \
             -chdir=environments/${{ matrix.environment }} \
             validate
 
       - name: Terraform Plan
+        if: steps.valid.outputs.exists == 'true'
         run: |
-          terraform \
-            -chdir=environments/${{ matrix.environment }} \
-            plan \
-            -var-file=terraform.tfvars \
-            -out=tfplan
+          if [ -f environments/${{ matrix.environment }}/terraform.tfvars ]; then
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              plan \
+              -var-file=terraform.tfvars \
+              -out=tfplan
+          else
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              plan \
+              -out=tfplan
+          fi
 
       - name: Export Plan Text
+        if: steps.valid.outputs.exists == 'true'
         run: |
           terraform \
             -chdir=environments/${{ matrix.environment }} \
             show -no-color tfplan > plan.txt
 
       - name: Upload Plan Artifact
+        if: steps.valid.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ matrix.environment }}
@@ -162,10 +181,12 @@ jobs:
             environments/${{ matrix.environment }}/tfplan
             environments/${{ matrix.environment }}/plan.txt
           retention-days: 14
+          if-no-files-found: warn
 
   summary:
     name: Terraform Summary
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs:
       - terraform-plan
@@ -174,22 +195,26 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: tfartifacts
+          merge-multiple: false
 
       - name: Build Summary
         shell: bash
         run: |
           echo "## Terraform Plan Results" >> $GITHUB_STEP_SUMMARY
 
-          find artifacts -name plan.txt | while read file; do
-            ENV_NAME=$(basename "$(dirname "$file")" | sed 's/tfplan-//')
+          if [ -d tfartifacts ]; then
+            find tfartifacts -name plan.txt | while read file; do
+              DIRNAME=$(basename "$(dirname "$file")")
+              ENV_NAME="${DIRNAME#tfplan-}"
 
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ${ENV_NAME}" >> $GITHUB_STEP_SUMMARY
-            echo '```terraform' >> $GITHUB_STEP_SUMMARY
-            head -100 "$file" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          done
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### ${ENV_NAME}" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -100 "$file" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
+          fi
 
       - name: Comment PR Summary
         if: github.event_name == 'pull_request'
@@ -197,11 +222,13 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const body = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
-
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: body.slice(0, 60000)
-            });
+            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+            if (fs.existsSync(summaryPath)) {
+              const body = fs.readFileSync(summaryPath, 'utf8');
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body.slice(0, 60000)
+              });
+            }

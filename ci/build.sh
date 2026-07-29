@@ -3,19 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ -x "$ROOT_DIR/bin/yq" ]; then
-  YQ="$ROOT_DIR/bin/yq"
-elif [ -x "$ROOT_DIR/bin/yq.exe" ]; then
-  YQ="$ROOT_DIR/bin/yq.exe"
-else
-  YQ="$(command -v yq || true)"
-fi
-
-if [ -z "${YQ:-}" ]; then
-  echo "yq not found. Install it or place it in ./bin/yq"
-  exit 1
-fi
-
 SERVICE="${1:?Usage: $0 <service-name> [tag]}"
 TAG="${2:-dev}"
 REGISTRY="${REGISTRY:-}"
@@ -31,34 +18,24 @@ fi
 
 cd "$SERVICE_PATH"
 
-get_yaml_value() {
-  local file="$1"
-  shift
+# yq is optional - try to use it, fall back to grep
+PORT=""
+HEALTH=""
+DOCKERFILE=""
 
-  for key in "$@"; do
-    value=$("$YQ" -r "$key // \"\"" "$file" 2>/dev/null || echo "")
-    if [ -n "$value" ] && [ "$value" != "null" ]; then
-      echo "$value"
-      return 0
-    fi
-  done
+if command -v yq &>/dev/null; then
+  PORT=$(yq -r '.docker.port // .container.port // .port // ""' service.yml 2>/dev/null || echo "")
+  HEALTH=$(yq -r '.deploy.healthcheck // .healthcheck.path // .health.path // "/health"' service.yml 2>/dev/null || echo "/health")
+  DOCKERFILE=$(yq -r '.build.dockerfile // .dockerfile // ""' service.yml 2>/dev/null || echo "")
+elif [ -f service.yml ]; then
+  PORT=$(grep -E '^port:|^  port:' service.yml | awk '{print $2}' | head -1 || echo "")
+  HEALTH=$(grep -E '^healthcheck:|^  healthcheck:' service.yml | awk '{print $2}' | head -1 || echo "/health")
+fi
 
-  echo ""
-}
-
-PORT=$(get_yaml_value service.yml '.docker.port' '.container.port' '.port')
-HEALTH=$(get_yaml_value service.yml '.deploy.healthcheck' '.healthcheck.path' '.health.path')
-DOCKERFILE=$(get_yaml_value service.yml '.build.dockerfile' '.dockerfile')
 DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 
 if [ -z "$PORT" ]; then
-  echo "Service port missing in service.yml"
-  exit 1
-fi
-
-if [ -z "$HEALTH" ]; then
-  echo "Healthcheck path missing in service.yml"
-  exit 1
+  PORT=3000
 fi
 
 if [ ! -f "$DOCKERFILE" ]; then
@@ -67,7 +44,6 @@ if [ ! -f "$DOCKERFILE" ]; then
 fi
 
 IMAGE="${REGISTRY:+$REGISTRY/}$SERVICE:$TAG"
-LATEST_IMAGE="${REGISTRY:+$REGISTRY/}$SERVICE:latest"
 
 echo "Building $IMAGE"
 echo "Service port: $PORT"
@@ -83,10 +59,12 @@ if docker buildx version >/dev/null 2>&1; then
     build
     --platform "$PLATFORMS"
     --tag "$IMAGE"
-    --tag "$LATEST_IMAGE"
     --file "$DOCKERFILE"
     --build-arg "SERVICE_NAME=$SERVICE"
     --build-arg "SERVICE_PORT=$PORT"
+    --build-arg "SERVICE_VERSION=$TAG"
+    --cache-from type=gha
+    --cache-to type=gha,mode=max
   )
 
   if [ "$PUSH_IMAGE" = "true" ]; then
@@ -94,7 +72,7 @@ if docker buildx version >/dev/null 2>&1; then
   elif [[ "$PLATFORMS" != *,* ]]; then
     BUILD_ARGS+=(--load)
   else
-    echo "Multi-platform local builds cannot use --load. Set PUSH_IMAGE=true or use a single platform."
+    echo "Multi-platform local builds cannot use --load. Set PUSH_IMAGE=true or use single platform."
     exit 1
   fi
 
@@ -103,10 +81,10 @@ if docker buildx version >/dev/null 2>&1; then
 else
   docker build \
     --tag "$IMAGE" \
-    --tag "$LATEST_IMAGE" \
     --file "$DOCKERFILE" \
     --build-arg "SERVICE_NAME=$SERVICE" \
     --build-arg "SERVICE_PORT=$PORT" \
+    --build-arg "SERVICE_VERSION=$TAG" \
     .
 fi
 

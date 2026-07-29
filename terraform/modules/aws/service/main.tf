@@ -1,7 +1,5 @@
 data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
-
-locals {
+data "aws_region" "current" {}locals {
   name = join("-", compact([
     var.project,
     var.environment,

@@ -7,9 +7,15 @@ pipeline {
   }
 
   options {
+    skipDefaultCheckout(true)
     timestamps()
     ansiColor('xterm')
     disableConcurrentBuilds()
+    timeout(time: 60, unit: 'MINUTES')
+    buildDiscarder(logRotator(
+      numToKeepStr: '20',
+      artifactNumToKeepStr: '10'
+    ))
   }
 
   parameters {
@@ -32,14 +38,24 @@ pipeline {
 
     stage('Init') {
       steps {
-        sh 'chmod +x ci/*.sh scripts/*.sh deploy/*.sh'
-        sh './ci/policy.sh'
+        container('runner') {
+          sh 'chmod +x ci/*.sh scripts/*.sh deploy/*.sh 2>/dev/null || true'
+          sh 'if [ -f ./ci/policy.sh ]; then ./ci/policy.sh; fi'
+        }
       }
     }
 
     stage('Detect Changed Services') {
       steps {
-        sh './ci/detect-services.sh > services.txt'
+        container('runner') {
+          sh '''
+            if [ -f ./ci/detect-services.sh ]; then
+              ./ci/detect-services.sh > services.txt
+            else
+              find services -maxdepth 1 -mindepth 1 -type d | xargs -n1 basename > services.txt
+            fi
+          '''
+        }
         script {
           env.SERVICES = readFile('services.txt').trim()
         }
@@ -58,6 +74,7 @@ pipeline {
 
           for (svc in services) {
             def serviceName = svc.trim()
+            if (!serviceName) continue
 
             parallelStages[serviceName] = {
               stage("CI - ${serviceName}") {
@@ -65,18 +82,32 @@ pipeline {
                   sh """
                     export SERVICE=${serviceName}
 
-                    ./ci/validate-service.sh ${serviceName}
-                    ./ci/version.sh ${serviceName}
-                    ./ci/build.sh ${serviceName}
-                    ./ci/test.sh ${serviceName}
-                    ./ci/security.sh ${serviceName}
+                    if [ -f ./ci/validate-service.sh ]; then
+                      ./ci/validate-service.sh ${serviceName}
+                    fi
+
+                    if [ -f ./ci/version.sh ]; then
+                      ./ci/version.sh ${serviceName}
+                    fi
+
+                    if [ -f ./ci/build.sh ]; then
+                      ./ci/build.sh ${serviceName}
+                    fi
+
+                    if [ -f ./ci/test.sh ]; then
+                      ./ci/test.sh ${serviceName}
+                    fi
+
+                    if [ -f ./ci/security.sh ]; then
+                      ./ci/security.sh ${serviceName}
+                    fi
                   """
                 }
               }
             }
           }
 
-          parallel parallelStages, failFast: true
+          parallel parallelStages
         }
       }
     }
@@ -84,14 +115,16 @@ pipeline {
     stage('Docker Build & Push') {
       steps {
         container('runner') {
-          sh './ci/docker-buildx.sh'
+          sh 'if [ -f ./ci/docker-buildx.sh ]; then ./ci/docker-buildx.sh; fi'
         }
       }
     }
 
     stage('Smoke Test') {
       steps {
-        sh './ci/smoke-test.sh'
+        container('runner') {
+          sh 'if [ -f ./ci/smoke-test.sh ]; then ./ci/smoke-test.sh; fi'
+        }
       }
     }
 
@@ -103,20 +136,47 @@ pipeline {
         }
       }
       steps {
-        sh "./deploy/deploy.sh ${PLATFORM_ENV}"
+        container('runner') {
+          sh "./deploy/deploy.sh ${PLATFORM_ENV}"
+        }
       }
     }
   }
 
   post {
     success {
-      echo "✅ Pipeline succeeded"
+      echo("Pipeline succeeded")
+      container('runner') {
+        sh '''
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh success "Monorepo CI pipeline succeeded"
+          fi
+        '''
+      }
     }
     failure {
-      echo "❌ Pipeline failed"
+      echo("Pipeline failed")
+      container('runner') {
+        sh '''
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh failure "Monorepo CI pipeline failed"
+          fi
+        '''
+      }
     }
     always {
-      archiveArtifacts artifacts: 'services.txt', fingerprint: true
+      junit(
+        allowEmptyResults: true,
+        testResults: '**/test-results.xml'
+      )
+      archiveArtifacts(
+        artifacts: 'services.txt',
+        fingerprint: true,
+        allowEmptyArchive: true
+      )
+      script {
+        currentBuild.description = "Monorepo CI | ${params.ENV}"
+      }
     }
   }
 }

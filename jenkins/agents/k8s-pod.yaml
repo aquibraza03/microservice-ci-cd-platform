@@ -8,26 +8,28 @@ spec:
 
   containers:
     - name: runner
-      image: ${CI_AGENT_IMAGE}
+      image: ${CI_AGENT_IMAGE:-jenkins/inbound-agent:latest}
       imagePullPolicy: IfNotPresent
       command:
         - cat
       tty: true
       resources:
         requests:
-          cpu: "${CI_CPU_REQUEST}"
-          memory: "${CI_MEMORY_REQUEST}"
+          cpu: "${CI_CPU_REQUEST:-500m}"
+          memory: "${CI_MEMORY_REQUEST:-512Mi}"
         limits:
-          cpu: "${CI_CPU_LIMIT}"
-          memory: "${CI_MEMORY_LIMIT}"
+          cpu: "${CI_CPU_LIMIT:-2000m}"
+          memory: "${CI_MEMORY_LIMIT:-2048Mi}"
       env:
         - name: DOCKER_BUILDKIT
           value: "1"
         - name: CI
           value: "true"
+        - name: GRADLE_OPTS
+          value: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true"
 
     - name: docker
-      image: ${DOCKER_IMAGE}
+      image: ${DOCKER_IMAGE:-docker:dind}
       command:
         - dockerd-entrypoint.sh
       securityContext:
@@ -36,8 +38,14 @@ spec:
         requests:
           cpu: "500m"
           memory: "512Mi"
+        limits:
+          cpu: "${DOCKER_CPU_LIMIT:-4000m}"
+          memory: "${DOCKER_MEMORY_LIMIT:-4096Mi}"
+      env:
+        - name: DOCKER_TLS_CERTDIR
+          value: ""
 
   imagePullSecrets:
-    - name: ${IMAGE_PULL_SECRET}
+    - name: ${IMAGE_PULL_SECRET:-jenkins-docker-registry}
 
   restartPolicy: Never

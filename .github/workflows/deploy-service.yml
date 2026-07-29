@@ -1,0 +1,95 @@
+name: Deploy Service (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+      image_registry:
+        required: false
+        type: string
+        default: ghcr.io/${{ github.repository_owner }}
+      health_path:
+        required: false
+        type: string
+        default: "/health"
+      rollout_timeout:
+        required: false
+        type: string
+        default: "300s"
+    secrets:
+      kubeconfig:
+        required: false
+      aws_access_key_id:
+        required: false
+      aws_secret_access_key:
+        required: false
+      aws_region:
+        required: false
+
+permissions:
+  contents: read
+  deployments: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Deployment Target
+        id: target
+        shell: bash
+        run: |
+          if [ -f "services/${{ inputs.service }}/service.yml" ]; then
+            TYPE=$(grep '^target:' services/${{ inputs.service }}/service.yml | awk '{print $2}')
+            HEALTH=$(grep '^healthcheck:' services/${{ inputs.service }}/service.yml | awk '{print $2}')
+          fi
+          echo "type=${TYPE:-k8s}" >> $GITHUB_OUTPUT
+          echo "health=${HEALTH:-${{ inputs.health_path }}}" >> $GITHUB_OUTPUT
+
+      - name: Deploy Service
+        env:
+          IMAGE_REGISTRY: ${{ inputs.image_registry }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          chmod +x deploy/deploy.sh
+          deploy/deploy.sh \
+            "${{ inputs.service }}" \
+            "${{ steps.target.outputs.type }}" \
+            "${{ inputs.environment }}"
+
+      - name: Health Check
+        run: |
+          chmod +x ci/smoke-test.sh
+          ci/smoke-test.sh \
+            "${{ inputs.service }}" \
+            "${{ steps.target.outputs.health }}" \
+            "${{ inputs.environment }}"
+
+      - name: Auto Rollback on Failure
+        if: failure()
+        env:
+          NAMESPACE: ${{ inputs.service }}
+          ROLLOUT_TIMEOUT: ${{ inputs.rollout_timeout }}
+        run: |
+          chmod +x deploy/k8s/rollback.sh
+          deploy/k8s/rollback.sh \
+            "${{ inputs.service }}"
+
+      - name: Publish Summary
+        run: |
+          echo "## Deploy: ${{ inputs.service }} -> ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ inputs.image_registry }}/${{ inputs.service }}:${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY

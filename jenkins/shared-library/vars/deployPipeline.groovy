@@ -56,7 +56,7 @@ def call(Map config = [:]) {
 
             if (!env.IMAGE) {
               env.IMAGE = sh(
-                script: './ci/versioning.sh',
+                script: './ci/version.sh',
                 returnStdout: true
               ).trim()
             }
@@ -161,8 +161,8 @@ def call(Map config = [:]) {
           if (autoRollback) {
             container(defaultContainer) {
               sh """
-                if [ -f ./deploy/rollback.sh ]; then
-                  ./deploy/rollback.sh ${PLATFORM_ENV} ${SERVICE_NAME}
+                if [ -f ./deploy/k8s/rollback.sh ]; then
+                  NAMESPACE=${SERVICE_NAME} ROLLOUT_TIMEOUT=300s ./deploy/k8s/rollback.sh ${SERVICE_NAME}
                 fi
               """
             }

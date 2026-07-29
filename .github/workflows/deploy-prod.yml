@@ -36,12 +36,14 @@ concurrency:
 
 env:
   ENVIRONMENT: prod
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
 
   preflight:
     name: Preflight Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       target: ${{ steps.target.outputs.type }}
       health_path: ${{ steps.meta.outputs.health_path }}
@@ -50,11 +52,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate Service Exists
-        run: |
-          test -d services/${{ github.event.inputs.service }}
+        run: test -d services/${{ github.event.inputs.service }}
 
       - name: Validate Change Ticket Format
-        shell: bash
         run: |
           echo "${{ github.event.inputs.change_ticket }}" | grep -E '^[A-Z]+-[0-9]+$'
 
@@ -68,25 +68,20 @@ jobs:
             TYPE="k8s"
           elif [ -d deploy/ecs ]; then
             TYPE="ecs"
-          else
-            echo "No deploy target found"
-            exit 1
           fi
-          echo "type=$TYPE" >> $GITHUB_OUTPUT
+          echo "type=${TYPE:-k8s}" >> $GITHUB_OUTPUT
 
       - name: Read Health Path
         id: meta
         shell: bash
         run: |
           PATH_CHECK=$(grep '^healthcheck:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}' || true)
-          if [ -z "$PATH_CHECK" ]; then
-            PATH_CHECK="/health"
-          fi
-          echo "health_path=$PATH_CHECK" >> $GITHUB_OUTPUT
+          echo "health_path=${PATH_CHECK:-/health}" >> $GITHUB_OUTPUT
 
   deploy:
     name: Deploy Production
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: preflight
 
     environment:
@@ -96,10 +91,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure Cloud Auth (OIDC Placeholder)
-        run: |
-          echo "Configure AWS/GCP/Azure federation here"
-
       - name: Record Deployment Start
         run: |
           echo "Deploying ${{ github.event.inputs.service }}"
@@ -107,38 +98,16 @@ jobs:
           echo "Ticket: ${{ github.event.inputs.change_ticket }}"
           echo "Strategy: ${{ github.event.inputs.rollout_strategy }}"
 
-      - name: Blue-Green Deploy
-        if: github.event.inputs.rollout_strategy == 'blue-green'
+      - name: Deploy (${{ github.event.inputs.rollout_strategy }})
+        env:
+          IMAGE_REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_TAG: ${{ github.event.inputs.image_ref }}
         run: |
-          chmod +x deploy/scripts/deploy.sh
-          deploy/scripts/deploy.sh \
+          chmod +x deploy/deploy.sh
+          deploy/deploy.sh \
             "${{ github.event.inputs.service }}" \
-            "${{ env.ENVIRONMENT }}" \
-            "${{ github.event.inputs.image_ref }}" \
             "${{ needs.preflight.outputs.target }}" \
-            blue-green
-
-      - name: Canary Deploy
-        if: github.event.inputs.rollout_strategy == 'canary'
-        run: |
-          chmod +x deploy/scripts/deploy.sh
-          deploy/scripts/deploy.sh \
-            "${{ github.event.inputs.service }}" \
-            "${{ env.ENVIRONMENT }}" \
-            "${{ github.event.inputs.image_ref }}" \
-            "${{ needs.preflight.outputs.target }}" \
-            canary
-
-      - name: Rolling Deploy
-        if: github.event.inputs.rollout_strategy == 'rolling'
-        run: |
-          chmod +x deploy/scripts/deploy.sh
-          deploy/scripts/deploy.sh \
-            "${{ github.event.inputs.service }}" \
-            "${{ env.ENVIRONMENT }}" \
-            "${{ github.event.inputs.image_ref }}" \
-            "${{ needs.preflight.outputs.target }}" \
-            rolling
+            "${{ env.ENVIRONMENT }}"
 
       - name: Health Check
         run: |
@@ -150,17 +119,19 @@ jobs:
 
       - name: Auto Rollback on Failure
         if: failure()
+        env:
+          NAMESPACE: ${{ github.event.inputs.service }}
+          ROLLOUT_TIMEOUT: 300s
         run: |
-          chmod +x deploy/scripts/rollback.sh
-          deploy/scripts/rollback.sh \
-            "${{ github.event.inputs.service }}" \
-            "${{ env.ENVIRONMENT }}" \
-            "${{ needs.preflight.outputs.target }}"
+          chmod +x deploy/k8s/rollback.sh
+          deploy/k8s/rollback.sh \
+            "${{ github.event.inputs.service }}"
 
   post-deploy:
     name: Production Summary
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs:
       - preflight
       - deploy

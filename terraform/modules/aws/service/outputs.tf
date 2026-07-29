@@ -1,12 +1,6 @@
 # -----------------------------
 # Data Sources (Dynamic Context)
 # -----------------------------
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
-
-# -----------------------------
-# Core Service Outputs
-# -----------------------------
 output "service_name" {
   description = "ECS service name"
   value       = aws_ecs_service.this.name

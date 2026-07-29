@@ -23,29 +23,57 @@ class Governance implements Serializable {
     return envName?.trim()?.toLowerCase() == 'prod'
   }
 
-  void validateBranchForEnv(String envName) {
+  private boolean globMatch(String pattern, String branch) {
+    if (pattern == branch) return true
+    if (pattern.endsWith('/*')) {
+      def prefix = pattern.substring(0, pattern.length() - 1)
+      return branch.startsWith(prefix)
+    }
+    if (pattern.endsWith('**')) {
+      def prefix = pattern.substring(0, pattern.length() - 2)
+      return branch.startsWith(prefix)
+    }
+    return false
+  }
 
+  void validateBranchForEnv(String envName) {
     def rules = loadJson('policies/branch-rules.json')
     def allowed = rules[envName] ?: []
 
-    if (!allowed.contains(branchName())) {
+    if (allowed.isEmpty()) {
+      steps.error("No branch rules defined for environment '${envName}'")
+    }
+
+    def branch = branchName()
+    def matched = allowed.any { pattern -> globMatch(pattern, branch) }
+
+    if (!matched) {
       steps.error(
-        "Branch '${branchName()}' not allowed for ${envName}. Allowed: ${allowed}"
+        "Branch '${branch}' not allowed for ${envName}. Allowed patterns: ${allowed}"
       )
     }
   }
 
   void blockIfFreezeEnabled() {
-
     def cfg = loadJson('policies/freeze-window.json')
 
     if (cfg.enabled == true) {
       steps.error(cfg.reason ?: 'Change freeze enabled')
     }
+
+    if (cfg.freezeWindows instanceof List) {
+      def now = new Date().getTime()
+      for (window in cfg.freezeWindows) {
+        def start = window.start ? Date.parse("yyyy-MM-dd'T'HH:mm:ss'Z'", window.start).getTime() : null
+        def end = window.end ? Date.parse("yyyy-MM-dd'T'HH:mm:ss'Z'", window.end).getTime() : null
+        if (start && end && now >= start && now <= end) {
+          steps.error(window.reason ?: "Change freeze window active")
+        }
+      }
+    }
   }
 
   void requireApproval(String envName, String message = null) {
-
     if (isProduction(envName)) {
       steps.timeout(time: 20, unit: 'MINUTES') {
         steps.input(
@@ -57,7 +85,6 @@ class Governance implements Serializable {
   }
 
   void protectService(String service, String envName = 'global') {
-
     def cfg = loadJson('policies/protected-services.json')
 
     def list = []
@@ -73,7 +100,6 @@ class Governance implements Serializable {
   }
 
   void validateDeploy(String service, String envName) {
-
     if (!service?.trim()) {
       steps.error("Service is required")
     }

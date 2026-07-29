@@ -1,3 +1,9 @@
+@Library('platform-shared-library') _
+
+import org.platform.Notifications
+import org.platform.Governance
+import org.platform.Utils
+
 pipeline {
   agent {
     kubernetes {
@@ -24,13 +30,11 @@ pipeline {
       choices: ['security', 'infra', 'release', 'dependency-update'],
       description: 'Operational workflow to run'
     )
-
     choice(
       name: 'ENV',
       choices: ['dev', 'staging', 'prod'],
       description: 'Target environment'
     )
-
     booleanParam(
       name: 'AUTO_APPROVE',
       defaultValue: false,
@@ -62,18 +66,32 @@ pipeline {
       }
     }
 
+    stage('Governance Checks') {
+      steps {
+        script {
+          def gov = new Governance(this)
+          gov.info("Running OPS mode: ${params.MODE} on ${params.ENV}")
+          if (params.MODE == 'infra' || params.MODE == 'release') {
+            gov.validateBranchForEnv(params.ENV)
+          }
+        }
+      }
+    }
+
     stage('Security Mode') {
       when {
         expression { params.MODE == 'security' }
       }
-
       steps {
         container('runner') {
-          retry(2) {
-            sh '''
-              ./ci/security.sh || exit 1
-            '''
-          }
+          sh '''
+            if [ -f ./ci/security.sh ]; then
+              ./ci/security.sh
+            else
+              echo "Missing ci/security.sh"
+              exit 1
+            fi
+          '''
         }
       }
     }
@@ -82,16 +100,16 @@ pipeline {
       when {
         expression { params.MODE == 'dependency-update' }
       }
-
       steps {
         container('runner') {
-          retry(2) {
-            sh '''
-              if [ -f ./ci/dependency-update.sh ]; then
-                ./ci/dependency-update.sh
-              fi
-            '''
-          }
+          sh '''
+            if [ -f ./ci/dependency-update.sh ]; then
+              ./ci/dependency-update.sh
+            else
+              echo "Missing ci/dependency-update.sh"
+              exit 1
+            fi
+          '''
         }
       }
     }
@@ -100,7 +118,6 @@ pipeline {
       when {
         expression { params.MODE == 'infra' }
       }
-
       steps {
         container('runner') {
           sh """
@@ -124,8 +141,11 @@ pipeline {
           expression { params.ENV == 'prod' || !params.AUTO_APPROVE }
         }
       }
-
       steps {
+        script {
+          def notifier = new Notifications(this)
+          notifier.approvalNeeded("Infrastructure apply required for ${params.ENV}")
+        }
         timeout(time: 20, unit: 'MINUTES') {
           input(
             message: "Approve infrastructure apply for ${params.ENV}?",
@@ -139,7 +159,6 @@ pipeline {
       when {
         expression { params.MODE == 'infra' }
       }
-
       steps {
         container('runner') {
           sh """
@@ -157,12 +176,11 @@ pipeline {
       when {
         expression { params.MODE == 'release' }
       }
-
       steps {
         container('runner') {
           script {
             env.VERSION = sh(
-              script: './ci/versioning.sh',
+              script: './ci/version.sh',
               returnStdout: true
             ).trim()
           }
@@ -177,8 +195,11 @@ pipeline {
           expression { params.ENV == 'prod' || !params.AUTO_APPROVE }
         }
       }
-
       steps {
+        script {
+          def notifier = new Notifications(this)
+          notifier.approvalNeeded("Release ${env.VERSION} to ${params.ENV}")
+        }
         timeout(time: 20, unit: 'MINUTES') {
           input(
             message: "Approve release ${env.VERSION} to ${params.ENV}?",
@@ -192,7 +213,6 @@ pipeline {
       when {
         expression { params.MODE == 'release' }
       }
-
       steps {
         container('runner') {
           sh """
@@ -200,6 +220,9 @@ pipeline {
               ./release/release.sh ${env.VERSION} ${PLATFORM_ENV}
             elif [ -f ./ci/release.sh ]; then
               ./ci/release.sh ${env.VERSION}
+            else
+              echo "Release script missing"
+              exit 1
             fi
           """
         }
@@ -210,23 +233,36 @@ pipeline {
   post {
 
     success {
-      echo "✅ OPS pipeline completed"
+      script {
+        def notifier = new Notifications(this)
+        notifier.success("OPS success: ${params.MODE} (${params.ENV})")
+
+        def utils = new Utils(this)
+        utils.setDescription("${params.MODE} | ${params.ENV}")
+      }
 
       container('runner') {
         sh """
-          ./scripts/notify.sh success \
-          "OPS success: ${params.MODE} (${params.ENV})"
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh success \
+            "OPS success: ${params.MODE} (${params.ENV})"
+          fi
         """
       }
     }
 
     failure {
-      echo "❌ OPS pipeline failed"
+      script {
+        def notifier = new Notifications(this)
+        notifier.failure("OPS failed: ${params.MODE} (${params.ENV})")
+      }
 
       container('runner') {
         sh """
-          ./scripts/notify.sh failure \
-          "OPS failed: ${params.MODE} (${params.ENV})"
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh failure \
+            "OPS failed: ${params.MODE} (${params.ENV})"
+          fi
         """
       }
     }
@@ -237,14 +273,11 @@ pipeline {
         testResults: '**/test-results.xml'
       )
 
-      publishHTML([
-        allowMissing: true,
-        alwaysLinkToLastBuild: true,
-        keepAll: true,
+      htmlReports(
         reportDir: 'reports',
         reportFiles: 'index.html',
         reportName: 'Pipeline Report'
-      ])
+      )
 
       archiveArtifacts(
         artifacts: '**/plan.json, **/*.tfplan, reports/**',

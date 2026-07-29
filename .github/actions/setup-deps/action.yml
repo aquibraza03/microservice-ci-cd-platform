@@ -1,0 +1,66 @@
+name: Setup Dependencies
+description: Standardized runtime setup with caching for Node, Python, and Go
+
+inputs:
+  service:
+    description: Service directory name
+    required: true
+  node_version:
+    description: Node.js version
+    required: false
+    default: "20"
+  python_version:
+    description: Python version
+    required: false
+    default: "3.12"
+  go_version:
+    description: Go version
+    required: false
+    default: "1.22"
+
+outputs:
+  type:
+    description: Detected runtime type (node, python, go, unknown)
+    value: ${{ steps.detect.outputs.type }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Detect Runtime
+      id: detect
+      shell: bash
+      run: |
+        if [ -f "services/${{ inputs.service }}/package.json" ]; then
+          echo "type=node" >> $GITHUB_OUTPUT
+        elif [ -f "services/${{ inputs.service }}/requirements.txt" ] || [ -f "services/${{ inputs.service }}/pyproject.toml" ]; then
+          echo "type=python" >> $GITHUB_OUTPUT
+        elif [ -f "services/${{ inputs.service }}/go.mod" ]; then
+          echo "type=go" >> $GITHUB_OUTPUT
+        else
+          echo "type=unknown" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Setup Node
+      if: steps.detect.outputs.type == 'node'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: npm
+        cache-dependency-path: services/${{ inputs.service }}/package-lock.json
+
+    - name: Setup Python
+      if: steps.detect.outputs.type == 'python'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+        cache: pip
+        cache-dependency-path: services/${{ inputs.service }}/requirements.txt
+
+    - name: Setup Go
+      if: steps.detect.outputs.type == 'go'
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go_version }}
+        cache: true
+        cache-dependency-path: services/${{ inputs.service }}/go.sum
