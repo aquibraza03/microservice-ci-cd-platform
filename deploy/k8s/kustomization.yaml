@@ -1,4 +1,4 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
+apiVersion: kustomize.config.k8s.io/v1
 kind: Kustomization
 
 resources:
@@ -9,6 +9,8 @@ resources:
   - base/networkpolicy.yaml
   - base/serviceaccount.yaml
 
+namespace: ${K8S_NAMESPACE}
+
 labels:
   - pairs:
       app.kubernetes.io/managed-by: kustomize
@@ -18,4 +20,20 @@ labels:
 
 commonAnnotations:
   platform.io/deployment-model: kustomize
-  platform.io/compliance-tier: standard
+  platform.io/compliance-tier: ${COMPLIANCE_TIER}
+
+configMapGenerator:
+  - name: ${SERVICE_NAME}-config
+    literals:
+      - SERVICE_NAME=${SERVICE_NAME}
+      - ENVIRONMENT=${ENVIRONMENT}
+    options:
+      disableNameSuffixHash: true
+
+secretGenerator:
+  - name: ${SERVICE_NAME}-secrets
+    behavior: create
+    envs:
+      - .env.secret
+    options:
+      disableNameSuffixHash: true

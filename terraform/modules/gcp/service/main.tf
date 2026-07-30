@@ -14,6 +14,8 @@ resource "google_cloud_run_v2_service" "this" {
   location = var.region
   project  = var.project_id
 
+  labels = var.tags
+
   template {
     service_account = var.service_account_email
 
@@ -58,8 +60,8 @@ resource "google_cloud_run_v2_service" "this" {
   }
 
   traffic {
-    percent         = 100
-    latest_revision = true
+    percent = 100
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
   }
 }
 

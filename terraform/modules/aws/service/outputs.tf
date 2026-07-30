@@ -8,7 +8,7 @@ output "service_name" {
 
 output "service_arn" {
   description = "ECS service ARN"
-  value       = aws_ecs_service.this.arn
+  value       = aws_ecs_service.this.id
 }
 
 output "cluster_arn" {
@@ -60,6 +60,11 @@ output "container_port" {
   value       = try(var.load_balancer.container_port, null)
 }
 
+output "service_url" {
+  description = "Service endpoint URL (from load balancer DNS when available)"
+  value       = try(var.load_balancer.dns_name, null) != null ? "http://${var.load_balancer.dns_name}:${var.load_balancer.container_port}" : null
+}
+
 # -----------------------------
 # Autoscaling
 # -----------------------------
@@ -100,8 +105,8 @@ output "tags" {
 }
 
 output "service_status" {
-  description = "Current ECS service status"
-  value       = aws_ecs_service.this.status
+  description = "Current ECS service name"
+  value       = aws_ecs_service.this.name
 }
 
 output "account_id" {

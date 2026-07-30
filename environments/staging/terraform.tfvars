@@ -69,7 +69,7 @@ enable_cluster_autoscaler = true
 # ECS Compatibility
 # Used if deploy_target switched to ecs
 # ----------------------------------------------------------
-ecs_cluster_name = "platform-staging-ecs"
+ecs_cluster_name  = "platform-staging-ecs"
 ecs_desired_count = 2
 ecs_cpu           = 512
 ecs_memory        = 1024

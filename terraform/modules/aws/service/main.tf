@@ -1,5 +1,7 @@
 data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}locals {
+data "aws_region" "current" {}
+
+locals {
   name = join("-", compact([
     var.project,
     var.environment,
@@ -135,6 +137,13 @@ resource "aws_appautoscaling_target" "this" {
   resource_id        = "service/${split("/", var.cluster_arn)[1]}/${aws_ecs_service.this.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  lifecycle {
+    precondition {
+      condition     = var.desired_count >= var.min_count && var.desired_count <= var.max_count
+      error_message = "desired_count (${var.desired_count}) must be between min_count (${var.min_count}) and max_count (${var.max_count})."
+    }
+  }
 }
 
 resource "aws_appautoscaling_policy" "cpu" {

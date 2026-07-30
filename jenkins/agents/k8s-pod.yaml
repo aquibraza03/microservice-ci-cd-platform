@@ -3,12 +3,23 @@ kind: Pod
 metadata:
   labels:
     app: ci-agent
+    app.kubernetes.io/name: ci-agent
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/managed-by: jenkins
 spec:
   serviceAccountName: jenkins
 
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  automountServiceAccountToken: false
+
   containers:
     - name: runner
-      image: ${CI_AGENT_IMAGE:-jenkins/inbound-agent:latest}
+      image: ${CI_AGENT_IMAGE:-jenkins/inbound-agent:3207.vb_0791e53e9b_2}
       imagePullPolicy: IfNotPresent
       command:
         - cat
@@ -27,13 +38,25 @@ spec:
           value: "true"
         - name: GRADLE_OPTS
           value: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
 
     - name: docker
-      image: ${DOCKER_IMAGE:-docker:dind}
+      image: ${DOCKER_IMAGE:-docker:27.5-dind}
       command:
         - dockerd-entrypoint.sh
       securityContext:
         privileged: true
+        capabilities:
+          add:
+            - ALL
       resources:
         requests:
           cpu: "500m"

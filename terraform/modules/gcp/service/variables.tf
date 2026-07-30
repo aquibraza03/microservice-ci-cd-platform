@@ -143,8 +143,8 @@ variable "max_count" {
   default     = 10
 
   validation {
-    condition     = var.max_count >= var.min_count && var.max_count <= 1000
-    error_message = "max_count must be >= min_count and <= 1000."
+    condition     = var.max_count >= 1 && var.max_count <= 1000
+    error_message = "max_count must be between 1 and 1000."
   }
 }
 
@@ -183,4 +183,13 @@ variable "health_check" {
     )
     error_message = "Health check values must be valid."
   }
+}
+
+# -----------------------------
+# Metadata
+# -----------------------------
+variable "tags" {
+  description = "Resource labels"
+  type        = map(string)
+  default     = {}
 }

@@ -1,0 +1,12 @@
+{
+  "name": "service-test",
+  "private": true,
+  "scripts": {
+    "test": "c8 mocha 'unit/**/*.js'"
+  },
+  "devDependencies": {
+    "c8": "^10.1.2",
+    "chai": "^5.1.1",
+    "mocha": "^10.4.0"
+  }
+}

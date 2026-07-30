@@ -4,10 +4,19 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"unit tests running\" && exit 0"
+    "test": "c8 mocha 'test/unit/**/*.js' --reporter spec --timeout 5000",
+    "test:integration": "c8 mocha 'test/integration/**/*.js' --reporter spec --timeout 10000",
+    "test:contract": "c8 mocha 'test/contract/**/*.js' --reporter spec --timeout 5000",
+    "test:e2e": "bash test/e2e/health-check.sh",
+    "test:all": "npm test && npm run test:integration && npm run test:contract && npm run test:e2e"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "c8": "^12.0.0",
+    "chai": "^6.2.2",
+    "mocha": "^11.7.6"
+  }
 }

@@ -108,8 +108,8 @@ variable "max_count" {
   default     = 10
 
   validation {
-    condition     = var.max_count >= var.min_count && var.max_count <= 100
-    error_message = "max_count must be >= min_count and <= 100."
+    condition     = var.max_count >= 1 && var.max_count <= 100
+    error_message = "max_count must be between 1 and 100."
   }
 }
 
@@ -130,6 +130,7 @@ variable "health_check" {
   type = object({
     path                  = string
     port                  = number
+    host                  = optional(string)
     initial_delay_seconds = number
     interval              = number
     timeout               = number

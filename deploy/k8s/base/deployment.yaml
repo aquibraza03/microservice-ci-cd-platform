@@ -9,10 +9,22 @@ metadata:
     app.kubernetes.io/name: ${SERVICE_NAME}
     app.kubernetes.io/instance: ${SERVICE_NAME}
     app.kubernetes.io/component: backend
-    version: "${DEPLOY_VERSION}"
+    app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/version: "${DEPLOY_VERSION}"
 
 spec:
   replicas: ${REPLICAS}
+
+  revisionHistoryLimit: 5
+
+  progressDeadlineSeconds: 600
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
 
   selector:
     matchLabels:
@@ -24,10 +36,49 @@ spec:
         app.kubernetes.io/name: ${SERVICE_NAME}
         app.kubernetes.io/instance: ${SERVICE_NAME}
         app.kubernetes.io/component: backend
-        version: "${DEPLOY_VERSION}"
+        app.kubernetes.io/part-of: microservice-platform
+        app.kubernetes.io/version: "${DEPLOY_VERSION}"
+
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "${CONTAINER_PORT}"
+        prometheus.io/path: "${METRICS_PATH}"
 
     spec:
       serviceAccountName: ${SERVICE_NAME}
+
+      automountServiceAccountToken: false
+
+      terminationGracePeriodSeconds: 60
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/instance
+                      operator: In
+                      values:
+                        - ${SERVICE_NAME}
+                topologyKey: kubernetes.io/hostname
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: ${SERVICE_NAME}
 
       containers:
         - name: ${SERVICE_NAME}
@@ -38,6 +89,8 @@ spec:
 
           ports:
             - containerPort: ${CONTAINER_PORT}
+              name: http
+              protocol: TCP
 
           env:
             - name: SERVICE_NAME
@@ -49,6 +102,26 @@ spec:
             - name: ENVIRONMENT
               value: "${ENVIRONMENT}"
 
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+
           resources:
             requests:
               cpu: ${CPU_REQUEST}
@@ -58,16 +131,41 @@ spec:
               cpu: ${CPU_LIMIT}
               memory: ${MEMORY_LIMIT}
 
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+
+          startupProbe:
+            httpGet:
+              path: ${STARTUP_PATH}
+              port: ${CONTAINER_PORT}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 3
+
           readinessProbe:
             httpGet:
               path: ${READINESS_PATH}
               port: ${CONTAINER_PORT}
             initialDelaySeconds: 10
-            periodSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
 
           livenessProbe:
             httpGet:
               path: ${HEALTH_PATH}
               port: ${CONTAINER_PORT}
             initialDelaySeconds: 30
-            periodSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 3

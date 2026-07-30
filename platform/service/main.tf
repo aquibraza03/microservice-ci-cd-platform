@@ -1,4 +1,20 @@
 # ---------------------------------
+# Cloud Provider Validation
+# ---------------------------------
+resource "terraform_data" "provider_validation" {
+  lifecycle {
+    precondition {
+      condition = (
+        (var.cloud == "aws" && var.aws_cluster_arn != null && var.aws_execution_role_arn != null) ||
+        (var.cloud == "gcp" && var.gcp_project_id != null && var.gcp_region != null && var.gcp_service_account_email != null) ||
+        (var.cloud == "azure" && var.azure_resource_group_name != null && var.azure_container_app_environment_id != null)
+      )
+      error_message = "Required variables for selected cloud provider are missing. Check cloud-specific vars are set."
+    }
+  }
+}
+
+# ---------------------------------
 # Input Normalization Layer
 # ---------------------------------
 locals {
@@ -21,7 +37,7 @@ locals {
 # AWS Service
 # ---------------------------------
 module "aws_service" {
-  source = "../../modules/aws/service"
+  source = "../../terraform/modules/aws/service"
   count  = var.cloud == "aws" ? 1 : 0
 
   project      = var.project
@@ -36,9 +52,9 @@ module "aws_service" {
   min_count     = var.min_count
   max_count     = var.max_count
 
-  networking     = var.networking
-  load_balancer  = var.load_balancer
-  cluster_arn    = var.aws_cluster_arn
+  networking         = var.networking
+  load_balancer      = var.load_balancer
+  cluster_arn        = var.aws_cluster_arn
   execution_role_arn = var.aws_execution_role_arn
 
   enable_logging         = var.enable_logging
@@ -53,7 +69,7 @@ module "aws_service" {
 # GCP Service
 # ---------------------------------
 module "gcp_service" {
-  source = "../../modules/gcp/service"
+  source = "../../terraform/modules/gcp/service"
   count  = var.cloud == "gcp" ? 1 : 0
 
   project      = var.project
@@ -61,9 +77,9 @@ module "gcp_service" {
   service_name = var.service_name
   image        = var.image
 
-  project_id             = var.gcp_project_id
-  region                 = var.gcp_region
-  service_account_email  = var.gcp_service_account_email
+  project_id            = var.gcp_project_id
+  region                = var.gcp_region
+  service_account_email = var.gcp_service_account_email
 
   cpu    = local.normalized_cpu
   memory = local.normalized_memory
@@ -84,7 +100,7 @@ module "gcp_service" {
 # Azure Service
 # ---------------------------------
 module "azure_service" {
-  source = "../../modules/azure/service"
+  source = "../../terraform/modules/azure/service"
   count  = var.cloud == "azure" ? 1 : 0
 
   project      = var.project

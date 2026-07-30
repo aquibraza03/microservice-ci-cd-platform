@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/name: ${SERVICE_NAME}
     app.kubernetes.io/instance: ${SERVICE_NAME}
 spec:
-  minAvailable: ${PDB_MIN_AVAILABLE}
+  maxUnavailable: ${PDB_MAX_UNAVAILABLE}
   selector:
     matchLabels:
       app.kubernetes.io/instance: ${SERVICE_NAME}

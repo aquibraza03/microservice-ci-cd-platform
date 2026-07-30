@@ -106,9 +106,18 @@ variable "allow_public_access" {
 # Shared Optional Config
 # -----------------------------
 variable "health_check" {
-  description = "Health check config"
-  type        = any
-  default     = null
+  description = "Health check configuration"
+  type = object({
+    path                  = optional(string, "/health")
+    port                  = optional(number, 8080)
+    interval              = optional(number, 30)
+    timeout               = optional(number, 5)
+    retries               = optional(number, 3)
+    start_period          = optional(number, 10)
+    command               = optional(list(string), null)
+    initial_delay_seconds = optional(number, 10)
+  })
+  default = null
 }
 
 variable "tags" {
@@ -121,32 +130,34 @@ variable "tags" {
 # AWS Inputs
 # =====================================================
 variable "aws_cluster_arn" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "aws" || var.aws_cluster_arn != null
-    error_message = "aws_cluster_arn required for cloud = aws"
-  }
+  description = "ECS cluster ARN (required when cloud = aws)"
+  type        = string
+  default     = null
 }
 
 variable "aws_execution_role_arn" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "aws" || var.aws_execution_role_arn != null
-    error_message = "aws_execution_role_arn required for cloud = aws"
-  }
+  description = "ECS task execution role ARN (required when cloud = aws)"
+  type        = string
+  default     = null
 }
 
 variable "networking" {
-  type    = any
-  default = null
+  description = "Networking configuration for environment"
+  type = object({
+    subnets            = optional(list(string), [])
+    security_group_ids = optional(list(string), [])
+    vpc_id             = optional(string, null)
+  })
+  default = {}
 }
 
 variable "load_balancer" {
-  type    = any
+  description = "Load balancer configuration"
+  type = object({
+    target_group_arn = string
+    container_port   = number
+    dns_name         = optional(string, null)
+  })
   default = null
 }
 
@@ -169,33 +180,21 @@ variable "cpu_target_utilization" {
 # GCP Inputs
 # =====================================================
 variable "gcp_project_id" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "gcp" || var.gcp_project_id != null
-    error_message = "gcp_project_id required for cloud = gcp"
-  }
+  description = "GCP project ID (required when cloud = gcp)"
+  type        = string
+  default     = null
 }
 
 variable "gcp_region" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "gcp" || var.gcp_region != null
-    error_message = "gcp_region required for cloud = gcp"
-  }
+  description = "GCP region (required when cloud = gcp)"
+  type        = string
+  default     = null
 }
 
 variable "gcp_service_account_email" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "gcp" || var.gcp_service_account_email != null
-    error_message = "gcp_service_account_email required for cloud = gcp"
-  }
+  description = "GCP service account email (required when cloud = gcp)"
+  type        = string
+  default     = null
 }
 
 variable "max_instance_request_concurrency" {
@@ -212,21 +211,13 @@ variable "timeout_seconds" {
 # Azure Inputs
 # =====================================================
 variable "azure_resource_group_name" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "azure" || var.azure_resource_group_name != null
-    error_message = "azure_resource_group_name required for cloud = azure"
-  }
+  description = "Azure resource group name (required when cloud = azure)"
+  type        = string
+  default     = null
 }
 
 variable "azure_container_app_environment_id" {
-  type    = string
-  default = null
-
-  validation {
-    condition     = var.cloud != "azure" || var.azure_container_app_environment_id != null
-    error_message = "azure_container_app_environment_id required for cloud = azure"
-  }
+  description = "Azure Container App Environment resource ID (required when cloud = azure)"
+  type        = string
+  default     = null
 }

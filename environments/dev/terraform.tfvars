@@ -11,16 +11,16 @@ profile     = "startup"
 cloud = "aws"
 
 # AWS
-aws_cluster_arn         = "arn:aws:eks:ap-south-1:123456789012:cluster/platform-dev"
-aws_execution_role_arn  = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+aws_cluster_arn        = "arn:aws:eks:ap-south-1:123456789012:cluster/platform-dev"
+aws_execution_role_arn = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
 
 # GCP
-gcp_project_id = "your-gcp-project-dev"
-gcp_region     = "asia-south1"
+gcp_project_id            = "your-gcp-project-dev"
+gcp_region                = "asia-south1"
 gcp_service_account_email = "platform-sa@your-gcp-project-dev.iam.gserviceaccount.com"
 
 # Azure
-azure_resource_group_name = "rg-platform-dev"
+azure_resource_group_name          = "rg-platform-dev"
 azure_container_app_environment_id = "your-azure-cae-id"
 
 # Network

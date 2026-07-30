@@ -25,26 +25,24 @@ resource "azurerm_container_app" "this" {
       image  = var.image
       cpu    = var.cpu
       memory = "${var.memory}Gi"
-    }
 
-    # -----------------------------
-    # Optional Startup Probe
-    # -----------------------------
-    dynamic "startup_probe" {
-      for_each = var.health_check != null ? [var.health_check] : []
+      # -----------------------------
+      # Startup Probe
+      # -----------------------------
+      dynamic "liveness_probe" {
+        for_each = var.health_check != null ? [var.health_check] : []
 
-      content {
-        transport = "HTTP"
+        content {
+          transport = "HTTP"
 
-        http_get {
-          path = startup_probe.value.path
-          port = startup_probe.value.port
+          host                    = liveness_probe.value.host != null ? liveness_probe.value.host : "localhost"
+          port                    = liveness_probe.value.port
+          path                    = liveness_probe.value.path
+          initial_delay           = liveness_probe.value.initial_delay_seconds
+          interval_seconds        = liveness_probe.value.interval
+          timeout                 = liveness_probe.value.timeout
+          failure_count_threshold = liveness_probe.value.retries
         }
-
-        initial_delay_seconds = startup_probe.value.initial_delay_seconds
-        interval_seconds      = startup_probe.value.interval
-        timeout               = startup_probe.value.timeout
-        failure_count_threshold = startup_probe.value.retries
       }
     }
   }

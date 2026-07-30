@@ -49,14 +49,8 @@ variable "memory" {
   type        = number
 
   validation {
-    condition = (
-      (var.cpu == 256 && contains([512, 1024, 2048], var.memory)) ||
-      (var.cpu == 512 && contains([1024, 2048, 3072, 4096], var.memory)) ||
-      (var.cpu == 1024 && contains([2048, 3072, 4096, 8192], var.memory)) ||
-      (var.cpu == 2048 && contains([4096, 8192, 16384], var.memory)) ||
-      (var.cpu == 4096 && contains([8192, 16384, 30720], var.memory))
-    )
-    error_message = "Invalid CPU-memory combination for AWS Fargate."
+    condition     = contains([512, 1024, 2048, 3072, 4096, 8192, 16384, 30720], var.memory)
+    error_message = "Memory must be a valid Fargate memory value."
   }
 }
 
@@ -91,23 +85,8 @@ variable "max_count" {
   default     = 2
 
   validation {
-    condition     = var.max_count >= var.min_count && var.max_count <= 100
-    error_message = "max_count must be >= min_count and <= 100."
-  }
-}
-
-# Cross-validation (important)
-variable "scaling_sanity_check" {
-  description = "Internal validation for scaling consistency"
-  type        = bool
-  default     = true
-
-  validation {
-    condition = (
-      var.desired_count >= var.min_count &&
-      var.desired_count <= var.max_count
-    )
-    error_message = "desired_count must be between min_count and max_count."
+    condition     = var.max_count >= 1 && var.max_count <= 100
+    error_message = "max_count must be between 1 and 100."
   }
 }
 

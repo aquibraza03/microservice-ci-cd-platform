@@ -96,9 +96,7 @@ class Handler(BaseHTTPRequestHandler):
 # -------------------------------
 # Server Setup
 # -------------------------------
-server = HTTPServer((SERVICE_HOST, SERVICE_PORT), Handler)
 
-log("info", f"starting on {SERVICE_HOST}:{SERVICE_PORT}")
 
 # -------------------------------
 # Graceful Shutdown
@@ -108,13 +106,19 @@ def shutdown(sig, frame):
     server.shutdown()
     sys.exit(0)
 
+
 signal.signal(signal.SIGINT, shutdown)
 signal.signal(signal.SIGTERM, shutdown)
 
 # -------------------------------
 # Run Server
 # -------------------------------
-try:
-    server.serve_forever()
-except Exception as e:
-    log("error", "server error", {"error": str(e)})
+if __name__ == "__main__":
+    server = HTTPServer((SERVICE_HOST, SERVICE_PORT), Handler)
+
+    log("info", f"starting on {SERVICE_HOST}:{SERVICE_PORT}")
+
+    try:
+        server.serve_forever()
+    except Exception as e:
+        log("error", "server error", {"error": str(e)})

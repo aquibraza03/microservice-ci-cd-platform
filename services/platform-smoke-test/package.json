@@ -6,7 +6,16 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node -e \"require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))\""
+    "test": "c8 mocha 'test/unit/**/*.js' --reporter spec --timeout 5000",
+    "test:integration": "c8 mocha 'test/integration/**/*.js' --reporter spec --timeout 10000",
+    "test:e2e": "bash test/e2e/health-check.sh",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "c8": "^12.0.0",
+    "chai": "^6.2.2",
+    "mocha": "^11.7.6"
+  }
 }

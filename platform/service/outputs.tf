@@ -25,7 +25,7 @@ output "service_url" {
   description = "Unified service URL / endpoint"
 
   value = coalesce(
-    try(module.aws_service[0].target_group_arn, null), # AWS may expose ALB/TG depending on design
+    try(module.aws_service[0].service_url, null),
     try(module.gcp_service[0].service_url, null),
     try(module.azure_service[0].service_url, null)
   )

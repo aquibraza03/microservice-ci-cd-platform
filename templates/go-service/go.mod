@@ -1,3 +1,3 @@
-module {{SERVICE_NAME}}
+module service
 
 go 1.22

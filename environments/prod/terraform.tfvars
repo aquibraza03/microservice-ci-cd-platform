@@ -1,125 +1,87 @@
-# ==========================================================
-# Terraform Variables - PRODUCTION Environment
-# File: environments/prod/terraform.tfvars
-# 100% ENTERPRISE READY / STRICT NO HARDCODING / Ready to Paste
-# Purpose: Mission-critical production infrastructure inputs
-# ==========================================================
+# =============================================================================
+# Terraform Variables — PRODUCTION Environment
+# =============================================================================
+# Static values are set here. Dynamic values are injected by CI/CD via
+# TF_VAR_* environment variables (Terraform picks them up automatically).
+# Do NOT reference TF_VAR_* in this file — it would create literal strings.
+# =============================================================================
 
-# ----------------------------------------------------------
-# Core Platform Identity (Injected by CI/CD)
-# ----------------------------------------------------------
-project       = TF_VAR_project
-environment   = "prod"
-env_tier      = "production"
-platform_name = TF_VAR_platform_name
-org_name      = TF_VAR_org_name
+# ----- Core Platform Identity -----
+environment = "prod"
+env_tier    = "production"
 
-# ----------------------------------------------------------
-# Multi-Cloud Contract
-# Canonical variable name: cloud
-# ----------------------------------------------------------
-cloud            = TF_VAR_cloud
-primary_region   = TF_VAR_primary_region
-secondary_region = TF_VAR_secondary_region
+# ----- Multi-Cloud Contract -----
+# cloud is injected by CI/CD via TF_VAR_cloud
+# primary_region, secondary_region injected by CI/CD
 
-# ----------------------------------------------------------
-# Networking
-# ----------------------------------------------------------
-vpc_cidr             = TF_VAR_vpc_cidr
-public_subnet_cidrs  = jsondecode("${TF_VAR_public_subnet_cidrs}")
-private_subnet_cidrs = jsondecode("${TF_VAR_private_subnet_cidrs}")
-
+# ----- Networking -----
 enable_nat_gateway = true
 single_nat_gateway = false
+# vpc_cidr, subnet CIDRs injected by CI/CD
 
-# ----------------------------------------------------------
-# Deployment Target
-# ----------------------------------------------------------
-deploy_target = TF_VAR_deploy_target
-cluster_name  = TF_VAR_cluster_name
-
-# ----------------------------------------------------------
-# Compute / Capacity
-# ----------------------------------------------------------
+# ----- Compute / Capacity -----
 node_count    = 3
 node_min_size = 3
 node_max_size = 6
-instance_type = TF_VAR_instance_type
+# instance_type injected by CI/CD
 
-# ----------------------------------------------------------
-# Scaling Profile
-# ----------------------------------------------------------
-scaling_profile = TF_VAR_scaling_profile
+# ----- Scaling Profile -----
+# scaling_profile injected by CI/CD
 
-# ----------------------------------------------------------
-# Kubernetes Defaults
-# ----------------------------------------------------------
-namespace                 = TF_VAR_namespace
+# ----- Kubernetes Defaults -----
 default_replicas          = 3
 enable_cluster_autoscaler = true
+# namespace, cluster_name injected by CI/CD
 
-# ----------------------------------------------------------
-# ECS Compatibility
-# ----------------------------------------------------------
-ecs_cluster_name  = TF_VAR_ecs_cluster_name
+# ----- ECS Compatibility -----
 ecs_desired_count = 3
 ecs_cpu           = 512
 ecs_memory        = 1024
+# ecs_cluster_name injected by CI/CD
 
-# ----------------------------------------------------------
-# Registry / Images
-# ----------------------------------------------------------
-registry_provider    = TF_VAR_registry_provider
-image_tag_strategy   = TF_VAR_image_tag_strategy
+# ----- Registry / Images -----
 image_retention_days = 90
+# registry_provider, image_tag_strategy injected by CI/CD
 
-# ----------------------------------------------------------
-# Security
-# ----------------------------------------------------------
+# ----- Security Controls -----
 enable_encryption     = true
 enable_private_access = true
 enable_public_access  = false
 enable_waf            = true
 
-# ----------------------------------------------------------
-# Observability
-# ----------------------------------------------------------
+# ----- Observability -----
 enable_monitoring = true
 enable_logging    = true
 enable_tracing    = true
 enable_alerting   = true
 
-# ----------------------------------------------------------
-# Reliability / Cost
-# ----------------------------------------------------------
+# ----- Reliability / Cost -----
 use_spot_instances   = false
 spot_percentage      = 0
 off_hours_scale_down = false
 
-# ----------------------------------------------------------
-# Backup / Compliance
-# ----------------------------------------------------------
+# ----- Backup / Compliance -----
 backup_required = true
 retention_days  = 90
 audit_logging   = true
 
-# ----------------------------------------------------------
-# Platform Features
-# ----------------------------------------------------------
+# ----- Platform Features -----
 enable_gitops       = true
 enable_preview_envs = false
 enable_service_mesh = false
 
-# ----------------------------------------------------------
-# Governance
-# ----------------------------------------------------------
+# ----- Governance -----
 require_manual_approval = true
 allow_auto_apply        = false
-change_window           = TF_VAR_change_window
+# change_window injected by CI/CD
 
-# ----------------------------------------------------------
-# Tags
-# JSON string from CI/CD → jsondecode
-# ----------------------------------------------------------
-tags = jsondecode("${TF_VAR_tags}")
-
+# ----- Enterprise Tags -----
+tags = {
+  Environment = "prod"
+  Tier        = "production"
+  Platform    = "microservice-ci-cd-platform"
+  Owner       = "platform-engineering"
+  ManagedBy   = "terraform"
+  CostCenter  = "engineering-prod"
+  Compliance  = "soc2"
+}

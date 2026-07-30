@@ -1,0 +1,54 @@
+# =============================================================================
+# Terraform Variables — Example File
+# =============================================================================
+# Copy this file to environments/<env>/terraform.tfvars and customize.
+# Variables set by CI/CD via TF_VAR_* env vars are marked with "(CI/CD)".
+# =============================================================================
+
+# ----- Core Platform Identity -----
+project     = "your-project-name"
+environment = "dev"
+profile     = "startup"
+
+# ----- Multi-Cloud Selection -----
+# Options: aws, gcp, azure
+cloud = "aws"
+
+# ----- Service Configuration -----
+service_name    = "platform-api"
+image_tag       = "latest"
+container_port  = 8080
+allow_public_access = false
+
+# ----- Compute -----
+# cpu   = 256       # Uncomment if profile not used
+# memory = 512       # Uncomment if profile not used
+
+# ----- Scaling -----
+min_count = 1
+max_count = 2
+
+# ----- AWS Configuration (for cloud = "aws") -----
+aws_region              = "ap-south-1"
+aws_cluster_arn         = "arn:aws:ecs:ap-south-1:123456789012:cluster/platform-dev"
+aws_execution_role_arn  = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+
+# ----- GCP Configuration (for cloud = "gcp") -----
+gcp_project_id          = "your-gcp-project"
+gcp_region              = "asia-south1"
+gcp_service_account_email = "sa@your-gcp-project.iam.gserviceaccount.com"
+
+# ----- Azure Configuration (for cloud = "azure") -----
+azure_resource_group_name          = "rg-platform-dev"
+azure_container_app_environment_id = "/subscriptions/.../managedEnvironments/..."
+
+# ----- Observability -----
+enable_logging         = true
+log_retention_days     = 14
+cpu_target_utilization = 70
+
+# ----- Tags -----
+tags = {
+  Environment = "dev"
+  ManagedBy   = "terraform"
+}

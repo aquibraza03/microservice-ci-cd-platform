@@ -18,10 +18,10 @@ output "service_fqdn" {
 
 output "service_url" {
   description = "HTTPS URL for the service"
-  value       = try(
+  value = try(
     azurerm_container_app.this.latest_revision_fqdn != null
-      ? "https://${azurerm_container_app.this.latest_revision_fqdn}"
-      : null,
+    ? "https://${azurerm_container_app.this.latest_revision_fqdn}"
+    : null,
     null
   )
 }

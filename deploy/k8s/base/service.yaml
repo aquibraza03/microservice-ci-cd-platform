@@ -9,6 +9,8 @@ metadata:
     app.kubernetes.io/name: ${SERVICE_NAME}
     app.kubernetes.io/instance: ${SERVICE_NAME}
     app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/managed-by: kustomize
 
 spec:
   type: ${SERVICE_TYPE}
@@ -21,3 +23,5 @@ spec:
       port: ${SERVICE_PORT}
       targetPort: ${CONTAINER_PORT}
       protocol: TCP
+
+  sessionAffinity: None

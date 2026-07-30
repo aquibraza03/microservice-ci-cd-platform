@@ -5,43 +5,43 @@ DEPLOYMENT="${1:-}"
 REVISION="${2:-}"
 
 : "${NAMESPACE:?NAMESPACE must be set}"
-: "${ROLLOUT_TIMEOUT:?ROLLOUT_TIMEOUT must be set}"
+ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300s}"
 
 TIMEOUT="${ROLLOUT_TIMEOUT}"
 DRY_RUN="${DRY_RUN:-false}"
+CONFIRM="${CONFIRM:-false}"
 
-log() {
-  printf '[%s] %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*"
-}
-
-fail() {
-  log "ERROR: $*"
-  exit 1
-}
-
+log() { printf '[%s] %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*"; }
+fail() { log "ERROR: $*"; exit 1; }
 trap 'fail "Unexpected error on line $LINENO"' ERR
 
 if [[ -z "${DEPLOYMENT}" ]]; then
   fail "Usage: $0 <deployment-name> [revision]"
 fi
 
-[[ "${TIMEOUT}" =~ ^[0-9]+s$ ]] || fail "ROLLOUT_TIMEOUT must look like 300s"
+# Normalize timeout format
+if [[ ! "${TIMEOUT}" =~ ^[0-9]+s$ ]]; then
+  fail "ROLLOUT_TIMEOUT must look like 300s (got: ${TIMEOUT})"
+fi
 
-command -v kubectl >/dev/null 2>&1 || fail "kubectl is not installed or not in PATH"
-
+command -v kubectl >/dev/null 2>&1 || fail "kubectl is not installed"
 kubectl cluster-info >/dev/null 2>&1 || fail "Unable to connect to Kubernetes cluster"
-
 kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1 || fail "Namespace '${NAMESPACE}' not found"
-
 kubectl auth can-i get deployments -n "${NAMESPACE}" >/dev/null 2>&1 || fail "Insufficient permissions in namespace '${NAMESPACE}'"
-
 kubectl -n "${NAMESPACE}" get deployment "${DEPLOYMENT}" >/dev/null 2>&1 || fail "Deployment '${DEPLOYMENT}' not found in namespace '${NAMESPACE}'"
 
 log "Current rollout history for deployment/${DEPLOYMENT}:"
 kubectl -n "${NAMESPACE}" rollout history deployment/"${DEPLOYMENT}"
 
+# Confirmation for production rollbacks
+if [[ "${CONFIRM}" != "true" ]]; then
+  log "Rollback not confirmed. Set CONFIRM=true to execute."
+  log "Use DRY_RUN=true for a dry run."
+  exit 0
+fi
+
 if [[ "${DRY_RUN}" == "true" ]]; then
-  log "DRY_RUN=true: rollback not executed."
+  log "DRY_RUN=true — rollback not executed."
   if [[ -n "${REVISION}" ]]; then
     log "Would run: kubectl -n ${NAMESPACE} rollout undo deployment/${DEPLOYMENT} --to-revision=${REVISION}"
   else
