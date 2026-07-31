@@ -63,8 +63,8 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg "SERVICE_NAME=$SERVICE"
     --build-arg "SERVICE_PORT=$PORT"
     --build-arg "SERVICE_VERSION=$TAG"
-    --cache-from type=gha
-    --cache-to type=gha,mode=max
+    "--cache-from=type=gha"
+    "--cache-to=type=gha,mode=max"
   )
 
   if [ "$PUSH_IMAGE" = "true" ]; then

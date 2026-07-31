@@ -92,4 +92,4 @@ else
   echo "⚠️ yq not installed — skipping YAML validation"
 fi
 
-echo "✅ Service validation passed: $SERVICE""✅ Service validation passed: $SERVICE"
+echo "✅ Service validation passed: $SERVICE"

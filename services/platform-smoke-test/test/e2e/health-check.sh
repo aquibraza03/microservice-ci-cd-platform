@@ -36,8 +36,8 @@ echo "Server started with PID $SERVER_PID"
 
 # Test /health endpoint
 echo "Testing GET /health..."
-HEALTH_RESPONSE=$(curl -s http://127.0.0.1:$PORT/health)
-HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health)
+HEALTH_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/health)
+HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:"$PORT"/health)
 
 if [ "$HEALTH_STATUS" != "200" ]; then
   echo "FAIL: /health returned status $HEALTH_STATUS (expected 200)"
@@ -56,8 +56,8 @@ echo "PASS: /health response body valid"
 
 # Test /ready endpoint
 echo "Testing GET /ready..."
-READY_RESPONSE=$(curl -s http://127.0.0.1:$PORT/ready)
-READY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/ready)
+READY_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/ready)
+READY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:"$PORT"/ready)
 
 if [ "$READY_STATUS" != "200" ]; then
   echo "FAIL: /ready returned status $READY_STATUS (expected 200)"
@@ -76,8 +76,8 @@ echo "PASS: /ready response body valid"
 
 # Test /info endpoint
 echo "Testing GET /info..."
-INFO_RESPONSE=$(curl -s http://127.0.0.1:$PORT/info)
-INFO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/info)
+INFO_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/info)
+INFO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:"$PORT"/info)
 
 if [ "$INFO_STATUS" != "200" ]; then
   echo "FAIL: /info returned status $INFO_STATUS (expected 200)"
@@ -96,7 +96,7 @@ echo "PASS: /info response body valid"
 
 # Test default route
 echo "Testing GET /..."
-DEFAULT_RESPONSE=$(curl -s http://127.0.0.1:$PORT/)
+DEFAULT_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/)
 
 if [ "$DEFAULT_RESPONSE" != "platform smoke test running" ]; then
   echo "FAIL: / returned '$DEFAULT_RESPONSE' (expected 'platform smoke test running')"

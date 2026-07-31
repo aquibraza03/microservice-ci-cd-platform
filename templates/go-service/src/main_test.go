@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func captureStdout(fn func()) string {
@@ -253,5 +256,110 @@ func TestWithLogging_LogsRequest(t *testing.T) {
 	}
 	if payload["method"] != "GET" {
 		t.Errorf("expected method 'GET', got '%v'", payload["method"])
+	}
+}
+
+func TestBuildServer_ConfiguresTimeoutsAndAddress(t *testing.T) {
+	srv := buildServer()
+	if srv.Addr != "0.0.0.0:8080" {
+		t.Errorf("expected default addr '0.0.0.0:8080', got '%s'", srv.Addr)
+	}
+	if srv.ReadTimeout != 5*time.Second {
+		t.Errorf("expected 5s read timeout, got %v", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 10*time.Second {
+		t.Errorf("expected 10s write timeout, got %v", srv.WriteTimeout)
+	}
+}
+
+func TestBuildServer_ServesHealthThroughHandler(t *testing.T) {
+	srv := buildServer()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/health", nil)
+	srv.Handler.ServeHTTP(rec, req)
+	resp := rec.Result()
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 via built handler, got %d", resp.StatusCode)
+	}
+	var payload map[string]string
+	json.Unmarshal(body, &payload)
+	if payload["status"] != "ok" {
+		t.Errorf("expected status 'ok', got '%s'", payload["status"])
+	}
+}
+
+func TestShutdownOnSignal_ShutsDownServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	stop := make(chan os.Signal, 1)
+	done := make(chan error, 1)
+
+	go func() {
+		done <- shutdownOnSignal(srv.Config, stop)
+	}()
+
+	stop <- syscall.SIGTERM
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("expected nil error from shutdown, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdownOnSignal did not return after signal")
+	}
+}
+
+func TestShutdownOnSignal_LogsShutdownMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	stop := make(chan os.Signal, 1)
+	done := make(chan struct{})
+
+	out := captureStdout(func() {
+		go func() {
+			shutdownOnSignal(srv.Config, stop)
+			close(done)
+		}()
+		stop <- syscall.SIGINT
+		<-done
+	})
+
+	if !strings.Contains(out, "shutting down") {
+		t.Errorf("expected 'shutting down' log, got: %s", out)
+	}
+}
+
+func TestSignalsFromOS_ReturnsChannel(t *testing.T) {
+	ch := signalsFromOS()
+	if ch == nil {
+		t.Fatal("expected non-nil signal channel")
+	}
+}
+
+func TestMain_LogsServerErrorWhenPortInUse(t *testing.T) {
+	oldPort := servicePort
+	oldHost := serviceHost
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	servicePort = listener.Addr().(*net.TCPAddr).Port
+	serviceHost = "127.0.0.1"
+	defer func() {
+		servicePort = oldPort
+		serviceHost = oldHost
+	}()
+
+	out := captureStdout(main)
+	if !strings.Contains(out, "server error") {
+		t.Errorf("expected 'server error' log, got: %s", out)
 	}
 }

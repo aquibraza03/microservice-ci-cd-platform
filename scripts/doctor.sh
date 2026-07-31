@@ -8,8 +8,8 @@ FAILURES=0
 WARNINGS=0
 
 pass() { echo "✅ $1"; }
-warn() { echo "⚠️ $1"; ((WARNINGS++)); }
-fail() { echo "❌ $1"; ((FAILURES++)); }
+warn() { echo "⚠️ $1"; WARNINGS=$((WARNINGS + 1)); }
+fail() { echo "❌ $1"; FAILURES=$((FAILURES + 1)); }
 
 echo "🩺 Running platform diagnostics..."
 echo ""

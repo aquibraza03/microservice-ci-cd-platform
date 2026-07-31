@@ -9,13 +9,36 @@
     "test": "c8 mocha 'test/unit/**/*.js' --reporter spec --timeout 5000",
     "test:integration": "c8 mocha 'test/integration/**/*.js' --reporter spec --timeout 10000",
     "test:e2e": "bash test/e2e/health-check.sh",
-    "test:all": "npm test && npm run test:integration && npm run test:e2e"
+    "test:ci": "c8 mocha 'test/unit/**/*.js' --reporter mocha-junit-reporter --reporter-options mochaFile=junit.xml --timeout 5000",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e",
+    "lint": "eslint src test",
+    "audit": "npm audit --audit-level=high"
   },
   "license": "MIT",
   "type": "commonjs",
+  "c8": {
+    "check-coverage": true,
+    "statements": 90,
+    "lines": 90,
+    "functions": 90,
+    "branches": 85,
+    "reporter": [
+      "text",
+      "json-summary",
+      "html"
+    ]
+  },
+  "overrides": {
+    "glob": "^11.0.0",
+    "minimatch": "^10.2.6",
+    "brace-expansion": "^5.0.9",
+    "diff": "^9.0.0",
+    "serialize-javascript": "^7.0.7"
+  },
   "devDependencies": {
     "c8": "^12.0.0",
     "chai": "^6.2.2",
-    "mocha": "^11.7.6"
+    "mocha": "^11.7.6",
+    "mocha-junit-reporter": "^2.2.1"
   }
 }

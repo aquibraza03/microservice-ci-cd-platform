@@ -111,7 +111,7 @@ if [ "$rollout_failed" = false ] && [ -n "$HEALTH_URL" ]; then
 
   healthy=false
 
-  for i in $(seq 1 20); do
+  for _ in $(seq 1 20); do
     CODE="$(curl -ks -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)"
 
     if [ "$CODE" = "200" ]; then

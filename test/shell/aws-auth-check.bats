@@ -10,10 +10,22 @@ teardown() {
   export PATH="$ORIGINAL_PATH"
 }
 
+# Build a PATH that excludes every directory containing the given command,
+# so we can deterministically simulate a missing tool on any runner.
+filter_path() {
+  local exclude="$1"
+  local result=""
+  local dir
+  local IFS=:
+  for dir in $ORIGINAL_PATH; do
+    [ -x "$dir/$exclude" ] && continue
+    result="$result:$dir"
+  done
+  printf "%s" "${result#:}"
+}
+
 @test "fails when AWS CLI is not installed" {
-  local safe_dir="$TEMPDIR/noaws_bin"
-  mkdir -p "$safe_dir"
-  export PATH="$safe_dir"
+  export PATH="$(filter_path aws)"
   run bash "$BATS_TEST_DIRNAME/../../scripts/aws-auth-check.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"AWS CLI not installed"* ]]
@@ -35,7 +47,7 @@ JSON
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  export PATH="$mock_dir:$ORIGINAL_PATH"
   export AWS_ACCESS_KEY_ID="AKIA-test"
   export AWS_SECRET_ACCESS_KEY="test-secret"
 
@@ -62,7 +74,7 @@ JSON
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  export PATH="$mock_dir:$ORIGINAL_PATH"
   export AWS_WEB_IDENTITY_TOKEN_FILE="/tmp/token"
 
   run bash "$BATS_TEST_DIRNAME/../../scripts/aws-auth-check.sh"
@@ -82,7 +94,7 @@ if [ "$1" = "sts" ] && [ "$2" = "get-caller-identity" ]; then
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  export PATH="$mock_dir:$ORIGINAL_PATH"
 
   run bash "$BATS_TEST_DIRNAME/../../scripts/aws-auth-check.sh"
   echo "$output"
@@ -106,7 +118,7 @@ JSON
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  export PATH="$mock_dir:$ORIGINAL_PATH"
   export AWS_ACCESS_KEY_ID="AKIA-test"
   export AWS_SECRET_ACCESS_KEY="test-secret"
   unset AWS_REGION
@@ -134,7 +146,7 @@ JSON
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  export PATH="$mock_dir:$ORIGINAL_PATH"
   export AWS_ACCESS_KEY_ID="AKIA-test"
   export AWS_SECRET_ACCESS_KEY="test-secret"
   export AWS_REGION="us-west-2"
@@ -161,7 +173,9 @@ JSON
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  # Strip every directory that provides `jq` so the fallback parser path
+  # is exercised deterministically on any runner.
+  export PATH="$mock_dir:$(filter_path jq)"
   export AWS_ACCESS_KEY_ID="AKIA-test"
   export AWS_SECRET_ACCESS_KEY="test-secret"
 
@@ -187,7 +201,7 @@ JSON
 fi
 SCRIPT
   chmod +x "$mock_dir/aws"
-  export PATH="$mock_dir"
+  export PATH="$mock_dir:$ORIGINAL_PATH"
   export AWS_ACCESS_KEY_ID="AKIA-test"
   export AWS_SECRET_ACCESS_KEY="test-secret"
   export CI="true"

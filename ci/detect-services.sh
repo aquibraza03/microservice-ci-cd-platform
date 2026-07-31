@@ -21,7 +21,7 @@ for file in $CHANGED_FILES; do
     if [ -f "$SERVICES_DIR/$SERVICE/service.yml" ]; then
       
       # Avoid duplicates
-      if [[ ! " ${SERVICES[*]} " =~ " ${SERVICE} " ]]; then
+      if [[ ! " ${SERVICES[*]} " == *" ${SERVICE} "* ]]; then
         SERVICES+=("$SERVICE")
       fi
 

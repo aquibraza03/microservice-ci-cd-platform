@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SUMMARY_FILE=$(mktemp)
 
 echo "============================================"
 echo "  Shell Test Runner - BATS Test Suite"
@@ -14,6 +13,8 @@ TOTAL_PASS=0
 TOTAL_FAIL=0
 TOTAL_SKIP=0
 
+FAILED_SUITES=()
+
 for bats_file in "$SCRIPT_DIR"/*.bats; do
   name=$(basename "$bats_file" .bats)
   echo "--------------------------------------------"
@@ -21,21 +22,31 @@ for bats_file in "$SCRIPT_DIR"/*.bats; do
   echo "--------------------------------------------"
 
   set +e
-  bats_output=$(bats --detailed-output "$bats_file" 2>&1)
+  bats_output=$(bats --formatter tap "$bats_file" 2>&1)
   bats_exit=$?
   set -e
 
-  echo "$bats_output"
+  # Keep stdout/stderr readable in the pipeline log
+  echo "$bats_output" | grep -E '^(ok|not ok)' || true
 
-  # Parse results
+  # Parse TAP output
   while IFS= read -r line; do
-    if [[ "$line" =~ ^([0-9]+)\ tests,\ ([0-9]+)\ failures,\ ([0-9]+)\ skipped$ ]]; then
-      TOTAL_TESTS=$((TOTAL_TESTS + BASH_REMATCH[1]))
-      TOTAL_PASS=$((TOTAL_PASS + BASH_REMATCH[1] - BASH_REMATCH[2] - BASH_REMATCH[3]))
-      TOTAL_FAIL=$((TOTAL_FAIL + BASH_REMATCH[2]))
-      TOTAL_SKIP=$((TOTAL_SKIP + BASH_REMATCH[3]))
+    if [[ "$line" =~ ^ok\ [0-9]+[[:space:]]+(.*)$ ]]; then
+      if [[ "$line" == *"# skip"* ]]; then
+        TOTAL_SKIP=$((TOTAL_SKIP + 1))
+      else
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+      fi
+      TOTAL_TESTS=$((TOTAL_TESTS + 1))
+    elif [[ "$line" =~ ^not\ ok ]]; then
+      TOTAL_FAIL=$((TOTAL_FAIL + 1))
+      TOTAL_TESTS=$((TOTAL_TESTS + 1))
     fi
-  done < <(echo "$bats_output" | tail -5)
+  done <<< "$bats_output"
+
+  if [[ "$bats_exit" -ne 0 ]]; then
+    FAILED_SUITES+=("$name")
+  fi
 
   echo ""
 done
@@ -50,9 +61,11 @@ echo "  Failed:       $TOTAL_FAIL"
 echo "  Skipped:      $TOTAL_SKIP"
 echo "============================================"
 
-rm -f "$SUMMARY_FILE"
-
-if [[ "$TOTAL_FAIL" -gt 0 ]]; then
+if [[ ${#FAILED_SUITES[@]} -gt 0 ]]; then
+  echo "Failed suites:"
+  printf '  - %s\n' "${FAILED_SUITES[@]}"
   exit 1
 fi
+
+echo "All shell test suites passed."
 exit 0

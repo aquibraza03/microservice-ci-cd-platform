@@ -1,6 +1,6 @@
 const http = require("http")
 const { expect } = require("chai")
-const { requestHandler } = require("../../src/handler")
+const { requestHandler, shutdown, setServer } = require("../../src/handler")
 
 function makeRequest(url) {
   return new Promise((resolve, reject) => {
@@ -52,5 +52,49 @@ describe("requestHandler", () => {
   it("returns 404 for /ready (not defined in node handler)", async () => {
     const res = await makeRequest("/ready")
     expect(res.status).to.equal(404)
+  })
+
+  it("handles connection errors", async () => {
+    let rejected = false
+    try {
+      await makeRequest("/health")
+      setServer(null)
+      shutdown("SIGTERM")
+    } catch (err) {
+      rejected = true
+    }
+    expect(rejected).to.equal(false)
+  })
+})
+
+describe("shutdown", () => {
+  it("does not crash when no server is attached", () => {
+    setServer(null)
+    expect(() => shutdown("SIGTERM")).to.not.throw()
+  })
+
+  it("closes the attached server and exits with code 0", () => {
+    const originalExit = process.exit
+    let exitCode = null
+    let closed = false
+
+    const fakeServer = {
+      close(callback) {
+        closed = true
+        callback()
+      }
+    }
+
+    process.exit = (code) => { exitCode = code }
+
+    try {
+      setServer(fakeServer)
+      shutdown("SIGTERM")
+    } finally {
+      process.exit = originalExit
+    }
+
+    expect(closed).to.equal(true)
+    expect(exitCode).to.equal(0)
   })
 })

@@ -45,7 +45,7 @@ if [[ -n "${CI_SERVICE_LIST:-}" ]]; then
   log "Matrix mode: validating ${#services[@]} services"
 
   for svc in "${services[@]}"; do
-    "${BASH_SOURCE[0]}" "$svc"
+    CI_SERVICE_LIST= bash "${BASH_SOURCE[0]}" "$svc"
   done
 
   exit 0

@@ -113,7 +113,8 @@ deploy_manifests() {
 
   render_resource() {
     local file="$1"
-    local target="$RENDER_DIR/base/$(basename "$file")"
+    local target
+    target="$RENDER_DIR/base/$(basename "$file")"
     envsubst < "$file" > "$target"
   }
 

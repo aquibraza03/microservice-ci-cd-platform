@@ -82,15 +82,13 @@ RUN_URL="$SERVER_URL/$REPO/actions/runs/$RUN_ID"
 # Safe JSON Strings
 # ------------------------------------------------------------------------------
 
-RAW="$TITLE"; TITLE_JSON=$(escape_json)
-RAW="$MESSAGE"; MESSAGE_JSON=$(escape_json)
-RAW="$USERNAME"; USERNAME_JSON=$(escape_json)
-RAW="$ICON_EMOJI"; ICON_JSON=$(escape_json)
-RAW="$FOOTER"; FOOTER_JSON=$(escape_json)
-RAW="$MENTION"; MENTION_JSON=$(escape_json)
+TITLE_JSON=$(RAW="$TITLE" escape_json)
+USERNAME_JSON=$(RAW="$USERNAME" escape_json)
+ICON_JSON=$(RAW="$ICON_EMOJI" escape_json)
+FOOTER_JSON=$(RAW="$FOOTER" escape_json)
 
 TEXT="${MENTION} ${MESSAGE}"
-RAW="$TEXT"; TEXT_JSON=$(escape_json)
+TEXT_JSON=$(RAW="$TEXT" escape_json)
 
 # ------------------------------------------------------------------------------
 # Build Payload

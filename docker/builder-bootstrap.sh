@@ -6,9 +6,6 @@ set -Eeuo pipefail
 # Enterprise CI/CD Ready
 ############################################
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
 BUILDER_NAME="${BUILDER_NAME:-platform-builder}"
 PLATFORM_LIST="${PLATFORM_LIST:-linux/amd64,linux/arm64}"
 DRIVER="${BUILDER_DRIVER:-docker-container}"

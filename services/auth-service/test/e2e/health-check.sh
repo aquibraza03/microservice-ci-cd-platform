@@ -36,8 +36,8 @@ echo "Server started with PID $SERVER_PID"
 
 # Test /health endpoint
 echo "Testing GET /health..."
-HEALTH_RESPONSE=$(curl -s http://127.0.0.1:$PORT/health)
-HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/health)
+HEALTH_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/health)
+HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:"$PORT"/health)
 
 if [ "$HEALTH_STATUS" != "200" ]; then
   echo "FAIL: /health returned status $HEALTH_STATUS (expected 200)"
@@ -64,8 +64,8 @@ fi
 
 # Test /ready endpoint
 echo "Testing GET /ready..."
-READY_RESPONSE=$(curl -s http://127.0.0.1:$PORT/ready)
-READY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/ready)
+READY_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/ready)
+READY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:"$PORT"/ready)
 
 if [ "$READY_STATUS" != "200" ]; then
   echo "FAIL: /ready returned status $READY_STATUS (expected 200)"
@@ -91,7 +91,7 @@ fi
 
 # Test /login endpoint
 echo "Testing GET /login..."
-LOGIN_RESPONSE=$(curl -s http://127.0.0.1:$PORT/login)
+LOGIN_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/login)
 
 if ! echo "$LOGIN_RESPONSE" | python3 -c "
 import json, sys
@@ -110,7 +110,7 @@ fi
 
 # Test default route
 echo "Testing GET /..."
-DEFAULT_RESPONSE=$(curl -s http://127.0.0.1:$PORT/)
+DEFAULT_RESPONSE=$(curl -s http://127.0.0.1:"$PORT"/)
 
 if [ "$DEFAULT_RESPONSE" != "Auth service running" ]; then
   echo "FAIL: / returned '$DEFAULT_RESPONSE' (expected 'Auth service running')"

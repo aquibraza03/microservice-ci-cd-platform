@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Mocha Tests" time="0.067" tests="10" failures="0">
+  <testsuite name="Root Suite" timestamp="2026-07-31T19:17:42" tests="0" time="0.000" failures="0">
+  </testsuite>
+  <testsuite name="Auth Service Handler" timestamp="2026-07-31T19:17:42" tests="0" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.000" failures="0">
+  </testsuite>
+  <testsuite name="GET /health" timestamp="2026-07-31T19:17:42" tests="1" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.031" failures="0">
+    <testcase name="Auth Service Handler GET /health should return 200 with {status: &apos;ok&apos;}" time="0.028" classname="should return 200 with {status: &apos;ok&apos;}">
+    </testcase>
+  </testsuite>
+  <testsuite name="GET /ready" timestamp="2026-07-31T19:17:42" tests="1" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.003" failures="0">
+    <testcase name="Auth Service Handler GET /ready should return 200 with {ready: true}" time="0.003" classname="should return 200 with {ready: true}">
+    </testcase>
+  </testsuite>
+  <testsuite name="GET /login" timestamp="2026-07-31T19:17:42" tests="1" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.003" failures="0">
+    <testcase name="Auth Service Handler GET /login should return 200 with login message" time="0.002" classname="should return 200 with login message">
+    </testcase>
+  </testsuite>
+  <testsuite name="GET /env" timestamp="2026-07-31T19:17:42" tests="2" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.006" failures="0">
+    <testcase name="Auth Service Handler GET /env should return service name and env from env vars" time="0.003" classname="should return service name and env from env vars">
+    </testcase>
+    <testcase name="Auth Service Handler GET /env should use defaults when env vars not set" time="0.003" classname="should use defaults when env vars not set">
+    </testcase>
+  </testsuite>
+  <testsuite name="Default route" timestamp="2026-07-31T19:17:42" tests="1" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.003" failures="0">
+    <testcase name="Auth Service Handler Default route should return 200 with text/plain &apos;Auth service running&apos;" time="0.002" classname="should return 200 with text/plain &apos;Auth service running&apos;">
+    </testcase>
+  </testsuite>
+  <testsuite name="POST to /health" timestamp="2026-07-31T19:17:42" tests="1" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.003" failures="0">
+    <testcase name="Auth Service Handler POST to /health should return 200 (no method restriction)" time="0.002" classname="should return 200 (no method restriction)">
+    </testcase>
+  </testsuite>
+  <testsuite name="Unknown URL" timestamp="2026-07-31T19:17:42" tests="1" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.002" failures="0">
+    <testcase name="Auth Service Handler Unknown URL should return 200 with text (not 404)" time="0.002" classname="should return 200 with text (not 404)">
+    </testcase>
+  </testsuite>
+  <testsuite name="Content-Type headers" timestamp="2026-07-31T19:17:42" tests="2" file="/workspace/services/auth-service/test/unit/test-handler.js" time="0.013" failures="0">
+    <testcase name="Auth Service Handler Content-Type headers should return application/json for JSON routes" time="0.008" classname="should return application/json for JSON routes">
+    </testcase>
+    <testcase name="Auth Service Handler Content-Type headers should return text/plain for default route" time="0.003" classname="should return text/plain for default route">
+    </testcase>
+  </testsuite>
+</testsuites>

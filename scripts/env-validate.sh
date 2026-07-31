@@ -14,18 +14,21 @@ WARNINGS=0
 ERRORS=()
 WARNINGS_LIST=()
 
-pass() { [[ "$OUTPUT_FORMAT" == "text" ]] && echo "✅ $1"; }
+pass() {
+  [[ "$OUTPUT_FORMAT" == "text" ]] && echo "✅ $1"
+  return 0
+}
 
 fail() {
   [[ "$OUTPUT_FORMAT" == "text" ]] && echo "❌ $1"
   ERRORS+=("$1")
-  ((FAILURES++))
+  FAILURES=$((FAILURES + 1))
 }
 
 warn() {
   [[ "$OUTPUT_FORMAT" == "text" ]] && echo "⚠️ $1"
   WARNINGS_LIST+=("$1")
-  ((WARNINGS++))
+  WARNINGS=$((WARNINGS + 1))
 }
 
 trim() {
@@ -216,4 +219,8 @@ if [[ "$STRICT" == "true" && "$WARNINGS" -gt 0 ]]; then
   exit 1
 fi
 
-[[ "$FAILURES" -gt 0 ]] && exit 1
+if [[ "$FAILURES" -gt 0 ]]; then
+  exit 1
+fi
+
+exit 0

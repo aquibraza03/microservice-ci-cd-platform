@@ -128,38 +128,51 @@ func respond(w http.ResponseWriter, code int, payload interface{}) {
 }
 
 // -------------------------------
-// Main
+// Server construction
 // -------------------------------
-func main() {
+func buildServer() *http.Server {
 	addr := fmt.Sprintf("%s:%d", serviceHost, servicePort)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handler)
 
-	server := &http.Server{
+	return &http.Server{
 		Addr:         addr,
 		Handler:      withLogging(mux),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+}
+
+func signalsFromOS() <-chan os.Signal {
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	return stop
+}
+
+func shutdownOnSignal(srv *http.Server, stop <-chan os.Signal) error {
+	<-stop
+
+	logJSON("info", "shutting down", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return srv.Shutdown(ctx)
+}
+
+// -------------------------------
+// Main
+// -------------------------------
+func main() {
+	server := buildServer()
 
 	logJSON("info", "starting", map[string]interface{}{
-		"address": addr,
+		"address": server.Addr,
 	})
 
 	// Graceful shutdown (proper)
-	go func() {
-		stop := make(chan os.Signal, 1)
-		signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-		<-stop
-
-		logJSON("info", "shutting down", nil)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		server.Shutdown(ctx)
-	}()
+	go shutdownOnSignal(server, signalsFromOS())
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logJSON("error", "server error", map[string]interface{}{
