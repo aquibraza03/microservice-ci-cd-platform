@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
   deployments: write
   checks: write
   id-token: write
@@ -98,7 +99,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: services/${{ matrix.service }}
-          push: true
+          push: false
           tags: |
             ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ matrix.service }}:staging-latest
