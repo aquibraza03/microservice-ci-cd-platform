@@ -11,6 +11,9 @@
     "test:e2e": "bash test/e2e/health-check.sh",
     "test:ci": "c8 mocha 'test/unit/**/*.js' --reporter mocha-junit-reporter --reporter-options mochaFile=junit.xml --timeout 5000",
     "test:all": "npm test && npm run test:integration && npm run test:contract && npm run test:e2e",
+    "test:performance": "bash ../../ci/performance.sh auth-service load",
+    "test:performance:stress": "bash ../../ci/performance.sh auth-service stress",
+    "test:performance:soak": "bash ../../ci/performance.sh auth-service soak",
     "lint": "eslint src test",
     "audit": "npm audit --audit-level=high"
   },

@@ -10,5 +10,5 @@ deploy:
   healthcheck: /health
 
 ci:
-  run_tests: false
+  run_tests: true
   run_security: true
