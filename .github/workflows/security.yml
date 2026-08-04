@@ -26,6 +26,8 @@ concurrency:
 
 env:
   NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+  GO_VERSION: "1.22"
   TF_VERSION: "1.9.7"
 
 jobs:
@@ -38,9 +40,15 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Build Dynamic Matrix
         id: matrix
@@ -57,20 +65,52 @@ jobs:
           echo "matrix=$JSON" >> $GITHUB_OUTPUT
 
   secret-scan:
-    name: Secret Scan
+    name: Secret Scan (Gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5 # v2.3.6
+        with:
+          config_path: .gitleaks.toml
+          redact: true
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4.8.3
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+          license-check: true
 
   dependency-scan:
-    name: Dependency Scan
+    name: Dependency Scan (OSV + native audits)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: detect-services
@@ -81,13 +121,40 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Dependencies
         id: deps
         uses: ./.github/actions/setup-deps
         with:
           service: ${{ matrix.service }}
+
+      - name: OSV Scanner (all manifests)
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run OSV-Scanner
+        shell: bash
+        run: |
+          go install github.com/google/osv-scanner/cmd/osv-scanner@v1.9.4
+          OSV_SCANNER_ARGS=""
+          case "${{ steps.deps.outputs.type }}" in
+            node)   OSV_SCANNER_ARGS="services/${{ matrix.service }}/package-lock.json" ;;
+            python) OSV_SCANNER_ARGS="services/${{ matrix.service }}/requirements.txt" ;;
+            go)     OSV_SCANNER_ARGS="services/${{ matrix.service }}/go.mod" ;;
+          esac
+          if [ -n "$OSV_SCANNER_ARGS" ]; then
+            $(go env GOPATH)/bin/osv-scanner scan "$OSV_SCANNER_ARGS"
+          else
+            echo "No supported lockfile; skipping OSV scan"
+          fi
 
       - name: Install Node Dependencies
         if: steps.deps.outputs.type == 'node'
@@ -105,7 +172,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pip-audit
-          pip-audit
+          pip-audit -r requirements.txt
 
       - name: Go Vuln Check
         if: steps.deps.outputs.type == 'go'
@@ -113,6 +180,84 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    container:
+      image: semgrep/semgrep:1.172.0-nonroot@sha256:2e01772afbd85789464594ca86e22896748cbc78a5d9751dfc947a40b214ccc2
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Semgrep
+        shell: bash
+        run: |
+          semgrep scan \
+            --config "auto" \
+            --config "p/owasp-top-ten" \
+            --config "p/security-audit" \
+            --error \
+            --output semgrep-results.sarif \
+            --sarif \
+            --exclude 'node_modules'
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          sarif_file: semgrep-results.sarif
+
+  bandit:
+    name: Bandit (Python SAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: detect-services
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check for Python
+        id: check
+        run: |
+          if [ -f "services/${{ matrix.service }}/requirements.txt" ] || [ -f "services/${{ matrix.service }}/pyproject.toml" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Bandit
+        if: steps.check.outputs.exists == 'true'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          pip install bandit
+          bandit -r src -f json -o bandit.json || true
+
+      - name: Upload Bandit SARIF
+        if: steps.check.outputs.exists == 'true'
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          sarif_file: services/${{ matrix.service }}/bandit.json
 
   codeql:
     name: CodeQL
@@ -123,26 +268,36 @@ jobs:
       fail-fast: false
       matrix:
         language:
-          - javascript
+          - javascript-typescript
           - python
           - go
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Init CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
         with:
           languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          category: "/language:${{ matrix.language }}"
 
   container-scan:
-    name: Container Scan
+    name: Container Scan (Trivy + Grype)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: detect-services
@@ -153,7 +308,14 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Check Dockerfile
         id: dockerfile
@@ -166,41 +328,64 @@ jobs:
 
       - name: Setup Buildx
         if: steps.dockerfile.outputs.exists == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build Image
         if: steps.dockerfile.outputs.exists == 'true'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: services/${{ matrix.service }}
           push: false
           load: true
           tags: local/${{ matrix.service }}:security
 
-      - name: Trivy Scan
+      - name: Trivy Scan (fail on HIGH/CRITICAL)
         if: steps.dockerfile.outputs.exists == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           image-ref: local/${{ matrix.service }}:security
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          exit-code: 1
+          vuln-type: os,library
 
-      - name: Upload SARIF
+      - name: Upload Trivy SARIF
         if: steps.dockerfile.outputs.exists == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
         with:
           sarif_file: trivy-results.sarif
 
+      - name: Grype Scan
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: anchore/scan-action@4e08a16a68fb1b35d2fca00f0607db0b5b5120a7 # v5.0.0
+        with:
+          image: local/${{ matrix.service }}:security
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload Grype SARIF
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          sarif_file: results.sarif
+
   terraform-security:
-    name: Terraform Security
+    name: Infrastructure Security (Checkov + tfsec + TFLint)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Check Terraform Directory
         id: check
@@ -212,7 +397,7 @@ jobs:
           fi
 
       - if: steps.check.outputs.exists == 'true'
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
@@ -220,30 +405,67 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         run: terraform -chdir=terraform init -backend=false
 
+      - name: Terraform Validate
+        if: steps.check.outputs.exists == 'true'
+        run: terraform -chdir=terraform validate
+
       - name: Checkov Scan
         if: steps.check.outputs.exists == 'true'
-        uses: bridgecrewio/checkov-action@v12
+        uses: bridgecrewio/checkov-action@fcfd4ef72a8469ea29b98a1ba15dc390b1aee1db # v12.2926.0
         with:
           directory: terraform
           framework: terraform
           quiet: true
-          soft_fail: ${{ github.event_name == 'pull_request' }}
+          soft_fail: false
+
+      - name: tfsec Scan
+        if: steps.check.outputs.exists == 'true'
+        shell: bash
+        run: |
+          curl -sSfL https://github.com/aquasecurity/tfsec/releases/download/v1.28.5/tfsec-linux-amd64 \
+            -o /usr/local/bin/tfsec
+          chmod +x /usr/local/bin/tfsec
+          tfsec --config-file .tfsec.yml terraform
 
   sbom:
-    name: Generate SBOM
+    name: Generate SBOM (Syft)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@9f7302141466aa6482940f15371237e9d9f4c34a # v0.19.0
         with:
           path: .
+          format: cyclonedx-json
+          output-file: platform.cyclonedx.json
+
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@9f7302141466aa6482940f15371237e9d9f4c34a # v0.19.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: platform.spdx.json
+
+      - name: Verify SBOM validity
+        shell: bash
+        run: |
+          for f in platform.cyclonedx.json platform.spdx.json; do
+            python3 -c "import json,sys; json.load(open('$f'))" || { echo "SBOM $f is invalid"; exit 1; }
+            echo "SBOM $f is valid"
+          done
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-report
           path: "*.spdx.json"
@@ -256,18 +478,29 @@ jobs:
     timeout-minutes: 5
     needs:
       - secret-scan
+      - dependency-review
       - dependency-scan
+      - semgrep
+      - bandit
       - codeql
       - container-scan
       - terraform-security
       - sbom
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
       - name: Publish Summary
         run: |
           echo "## Security Pipeline Completed" >> $GITHUB_STEP_SUMMARY
           echo "- Secret scan: ${{ needs.secret-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency review: ${{ needs.dependency-review.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Dependency audit: ${{ needs.dependency-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Semgrep: ${{ needs.semgrep.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Bandit: ${{ needs.bandit.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- CodeQL: ${{ needs.codeql.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Container scan: ${{ needs.container-scan.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Terraform security: ${{ needs.terraform-security.result }}" >> $GITHUB_STEP_SUMMARY

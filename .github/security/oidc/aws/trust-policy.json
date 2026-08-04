@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": [
+            "repo:ORG/platform:ref:refs/heads/main",
+            "repo:ORG/platform:ref:refs/heads/develop",
+            "repo:ORG/platform:ref:refs/heads/hotfix/*",
+            "repo:ORG/platform:pull_request",
+            "repo:ORG/platform:environment:dev",
+            "repo:ORG/platform:environment:staging",
+            "repo:ORG/platform:environment:prod"
+          ]
+        }
+      }
+    }
+  ]
+}

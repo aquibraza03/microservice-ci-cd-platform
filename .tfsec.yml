@@ -1,0 +1,24 @@
+# =============================================================================
+# tfsec (Terraform Security Scanner) Configuration
+# Used by: security.yml terraform job, pre-commit
+# Severity threshold: HIGH and CRITICAL findings fail the pipeline.
+# =============================================================================
+severity_threshold: HIGH
+
+exclude:
+  # Template modules deliberately expose placeholder URLs/documentation;
+  # production is enforced in CI at plan/apply time.
+  - general-secrets
+  - aws-ecs-no-plaintext-secrets
+
+# Include only infrastructure paths under active management
+exclude-dirs:
+  - test/
+  - .git/
+  - node_modules/
+
+# Files that should never be scanned for secrets
+exclude-files:
+  - .env.example
+  - .env.local
+  - terraform.tfvars.example

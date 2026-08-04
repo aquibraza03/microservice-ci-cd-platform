@@ -39,9 +39,15 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Build Matrix
         id: set-matrix
@@ -71,12 +77,72 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         env:
           SHELLCHECK_OPTS: -e SC1091
+
+  hadolint:
+    name: Dockerfile Lint (Hadolint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: services/auth-service/Dockerfile
+          config: .hadolint.yml
+
+      - name: Lint Template Dockerfiles
+        shell: bash
+        run: |
+          curl -sSfL https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64 \
+            -o /usr/local/bin/hadolint
+          chmod +x /usr/local/bin/hadolint
+          for df in templates/*/Dockerfile; do
+            hadolint --config .hadolint.yml "$df"
+          done
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4.8.3
+        with:
+          fail-on-severity: high
+          license-check: true
 
   service-tests:
     name: Test ${{ matrix.service }}
@@ -90,7 +156,14 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Dependencies
         id: deps
@@ -133,7 +206,7 @@ jobs:
 
       - name: Upload Coverage Artifact
         if: hashFiles(format('services/{0}/coverage*', matrix.service), format('services/{0}/coverage.out', matrix.service)) != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-${{ matrix.service }}
           path: |
@@ -144,7 +217,7 @@ jobs:
 
       - name: Upload Coverage to Codecov
         if: hashFiles(format('services/{0}/coverage*', matrix.service), format('services/{0}/coverage.out', matrix.service)) != ''
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
         with:
           fail_ci_if_error: false
           verbose: true
@@ -161,7 +234,14 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Check Dockerfile Exists
         id: hasdocker
@@ -174,11 +254,11 @@ jobs:
 
       - name: Setup Docker Buildx
         if: steps.hasdocker.outputs.exists == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build Image
         if: steps.hasdocker.outputs.exists == 'true'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: services/${{ matrix.service }}
           push: false
@@ -187,10 +267,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
+          sbom: true
 
       - name: Trivy Scan
         if: steps.hasdocker.outputs.exists == 'true'
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:ci-${{ github.sha }}
           format: sarif
@@ -201,17 +282,24 @@ jobs:
 
       - name: Upload Trivy SARIF
         if: steps.hasdocker.outputs.exists == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
         with:
           sarif_file: trivy-${{ matrix.service }}.sarif
 
   terraform-validate:
-    name: Terraform Validate
+    name: Terraform Validate + TFLint
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Check Terraform Directory
         id: check
@@ -223,7 +311,10 @@ jobs:
           fi
 
       - if: steps.check.outputs.exists == 'true'
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - if: steps.check.outputs.exists == 'true'
+        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987 # v4.0.0
 
       - name: Terraform Format Check
         if: steps.check.outputs.exists == 'true'
@@ -237,6 +328,12 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         run: terraform -chdir=terraform validate 2>/dev/null || true
 
+      - name: TFLint
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          tflint --init
+          tflint --config .tflint.hcl terraform || true
+
   secret-scan:
     name: Secret Scan
     runs-on: ubuntu-latest
@@ -246,10 +343,20 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5 # v2.3.6
+        with:
+          config_path: .gitleaks.toml
+          redact: true
 
   ci-summary:
     name: CI Summary
@@ -258,6 +365,8 @@ jobs:
     timeout-minutes: 5
     needs:
       - shell-lint
+      - hadolint
+      - dependency-review
       - service-tests
       - docker-build
       - terraform-validate
@@ -268,6 +377,8 @@ jobs:
         run: |
           echo "## CI Pipeline Completed" >> $GITHUB_STEP_SUMMARY
           echo "- Shell lint: ${{ needs.shell-lint.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Hadolint: ${{ needs.hadolint.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency review: ${{ needs.dependency-review.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Service tests: ${{ needs.service-tests.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Docker builds: ${{ needs.docker-build.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Terraform validate: ${{ needs.terraform-validate.result }}" >> $GITHUB_STEP_SUMMARY

@@ -43,6 +43,7 @@ resource "aws_ecs_task_definition" "this" {
   memory = var.memory
 
   execution_role_arn = var.execution_role_arn
+  task_role_arn      = var.task_role_arn
 
   container_definitions = jsonencode([
     merge(
@@ -50,6 +51,17 @@ resource "aws_ecs_task_definition" "this" {
         name      = local.container_name
         image     = var.image
         essential = true
+
+        # Runtime hardening: non-root, read-only root filesystem,
+        # no privileged mode, all Linux capabilities dropped.
+        user    = "10001"
+        privileged = false
+        readonlyRootFilesystem = true
+        linuxParameters = {
+          capabilities = {
+            drop = ["ALL"]
+          }
+        }
 
         portMappings = var.load_balancer == null ? [] : [
           {
@@ -104,6 +116,15 @@ resource "aws_ecs_service" "this" {
 
   desired_count = var.desired_count
   launch_type   = "FARGATE"
+
+  # ECS Exec (SSM-based interactive shell) is disabled to reduce the attack
+  # surface for container escape and credential theft.
+  enable_execute_command = false
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  wait_for_steady_state = true
 
   network_configuration {
     subnets          = var.networking.subnets

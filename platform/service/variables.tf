@@ -141,6 +141,12 @@ variable "aws_execution_role_arn" {
   default     = null
 }
 
+variable "aws_task_role_arn" {
+  description = "ECS task role ARN (least-privilege IAM identity assumed by the container)"
+  type        = string
+  default     = null
+}
+
 variable "networking" {
   description = "Networking configuration for environment"
   type = object({

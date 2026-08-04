@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
   deployments: write
   checks: write
   id-token: write
@@ -39,9 +40,15 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Build Matrix
         id: matrix
@@ -67,7 +74,7 @@ jobs:
           echo "matrix=$JSON" >> $GITHUB_OUTPUT
 
   build-and-push:
-    name: Build (${{ matrix.service }})
+    name: Build + Sign (${{ matrix.service }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: detect-services
@@ -78,16 +85,23 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Verify Dockerfile
         run: test -f services/${{ matrix.service }}/Dockerfile
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -95,7 +109,7 @@ jobs:
 
       - name: Build and Push
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: services/${{ matrix.service }}
           push: true
@@ -103,6 +117,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
+
+      - name: Trivy Scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Sign Image (keyless, OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_DIGEST: ${{ env.REGISTRY }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMAGE_DIGEST"
 
       - name: Capture Digest
         run: |
@@ -125,7 +157,14 @@ jobs:
       name: dev
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Detect Deployment Target
         id: target
@@ -180,7 +219,8 @@ jobs:
       - name: Publish Summary
         run: |
           echo "## Dev Deployment Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- Images built and pushed" >> $GITHUB_STEP_SUMMARY
+          echo "- Images built, pushed, and signed" >> $GITHUB_STEP_SUMMARY
+          echo "- Trivy gates passed" >> $GITHUB_STEP_SUMMARY
           echo "- Services deployed to dev" >> $GITHUB_STEP_SUMMARY
           echo "- Health checks executed" >> $GITHUB_STEP_SUMMARY
           echo "- Auto rollback enabled" >> $GITHUB_STEP_SUMMARY

@@ -1,9 +1,18 @@
 # Security scan artifacts
 trivy/
+reports/
+.sarif/
+*.sarif
+npm-audit.json
 
 # Downloads
 bin/
 *.exe
+
+# Test coverage artifacts
+coverage/
+.nyc_output/
+*.lcov
 
 # Generated env files
 environments/*/env.example

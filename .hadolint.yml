@@ -1,0 +1,33 @@
+# =============================================================================
+# Hadolint Dockerfile Lint Configuration
+# Used by CI (hadolint job) and pre-commit to enforce secure Dockerfile
+# best practices. Rule IDs follow the hadolint DL3000+ specification.
+# =============================================================================
+failure-threshold: error
+
+ignored:
+  # Multi-stage builds may use an ARG for the base image tag (pinned by
+  # digest in CI; Dependabot keeps the digest current)
+  - DL3006
+  # Alpine HEALTHCHECK uses wget/busybox (no curl available)
+  - DL4006
+
+# Require explicit version pins for apt/apk packages
+apt-get-version-pinned: error
+apk-add-version-pinned: error
+
+# Require --no-cache / --no-install-recommends usage
+apt-get-without-cache: error
+apk-add-without-cache: error
+
+# Running as root in the final stage is disallowed (must USER non-root)
+root-user: error
+
+# Require explicit USER after COPY in runtime stages
+unpinned-user: warning
+
+# Require HEALTHCHECK on long-running services
+no-healthcheck: warning
+
+# COPY/ADD should set explicit --chown for files written to absolute paths
+copy-without-chown: warning

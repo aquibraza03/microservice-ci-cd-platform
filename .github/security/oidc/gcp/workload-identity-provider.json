@@ -1,0 +1,11 @@
+{
+  "name": "github-actions-platform",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "attribute_mapping": {
+    "google.subject": "assertion.sub",
+    "attribute.repository": "assertion.repository",
+    "attribute.ref": "assertion.ref",
+    "attribute.environment": "assertion.environment"
+  },
+  "attribute_condition": "assertion.repository == 'ORG/platform'"
+}

@@ -6,24 +6,26 @@ TAG="${2:-dev}"
 REGISTRY="${REGISTRY:-}"
 
 IMAGE="${REGISTRY:+$REGISTRY/}$SERVICE:$TAG"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVICE_DIR="$ROOT_DIR/services/$SERVICE"
 
 echo "Running security scan for $IMAGE"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker not installed"
-  exit 1
+# ---------------------------------------------------------------------------
+# Source-level dependency scan (no image required) with OSV Scanner
+# ---------------------------------------------------------------------------
+if command -v osv-scanner >/dev/null 2>&1; then
+  echo "--- OSV dependency scan ---"
+  if [ -d "$SERVICE_DIR" ]; then
+    osv-scanner scan "$SERVICE_DIR" || { echo "OSV scanner reported known vulnerabilities"; exit 1; }
+  fi
+else
+  echo "osv-scanner not installed (optional)"
 fi
 
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker daemon is not reachable"
-  exit 1
-fi
-
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "Image $IMAGE not found locally. Run ci/build.sh before security scanning."
-  exit 1
-fi
-
+# ---------------------------------------------------------------------------
+# Image scan with Trivy (fail on HIGH/CRITICAL)
+# ---------------------------------------------------------------------------
 TRIVY_BIN=""
 
 if command -v trivy >/dev/null 2>&1; then
@@ -39,10 +41,34 @@ if [ -z "$TRIVY_BIN" ]; then
   exit 1
 fi
 
-"$TRIVY_BIN" image \
-  --severity HIGH,CRITICAL \
-  --exit-code 1 \
-  --no-progress \
-  "$IMAGE"
+# Scan the local image when present, otherwise pull from the registry.
+if command -v docker >/dev/null 2>&1 && docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  "$TRIVY_BIN" image \
+    --severity HIGH,CRITICAL \
+    --ignore-unfixed \
+    --exit-code 1 \
+    --no-progress \
+    "$IMAGE"
+else
+  echo "Image $IMAGE not found locally; scanning remote reference"
+  "$TRIVY_BIN" image \
+    --severity HIGH,CRITICAL \
+    --ignore-unfixed \
+    --exit-code 1 \
+    --no-progress \
+    "$IMAGE"
+fi
+
+# ---------------------------------------------------------------------------
+# Grype secondary scanner (fail on HIGH/CRITICAL)
+# ---------------------------------------------------------------------------
+if command -v grype >/dev/null 2>&1; then
+  echo "--- Grype scan ---"
+  grype "$IMAGE" \
+    --fail-on high \
+    --only-fixed || { echo "Grype reported HIGH/CRITICAL vulnerabilities"; exit 1; }
+else
+  echo "grype not installed (optional)"
+fi
 
 echo "Security scan passed for $IMAGE"

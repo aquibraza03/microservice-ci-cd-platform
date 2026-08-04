@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine@sha256:afdf98210b07b586eb71fa22ba2e432e058e4cd1304d31ed60888755b8c865fb AS builder
 
 WORKDIR /build
 
@@ -7,7 +7,7 @@ RUN npm ci --only=production
 
 COPY src/ ./src/
 
-FROM node:20-alpine
+FROM node:20-alpine@sha256:afdf98210b07b586eb71fa22ba2e432e058e4cd1304d31ed60888755b8c865fb
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
@@ -16,10 +16,15 @@ WORKDIR /app
 COPY --from=builder /build/node_modules ./node_modules
 COPY --from=builder /build/src ./src
 
+RUN chown -R appuser:appuser /app && \
+    mkdir -p /tmp && chown -R appuser:appuser /tmp && \
+    find / -perm /4000 -type f -exec chmod u-s {} \; 2>/dev/null || true
+
 USER appuser
 
 ENV NODE_ENV=production \
-    SERVICE_PORT=3000
+    SERVICE_PORT=3000 \
+    HOME=/app
 
 EXPOSE 3000
 

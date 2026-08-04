@@ -54,7 +54,14 @@ jobs:
       branch: ${{ steps.branch.outputs.name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Validate Inputs
         shell: bash
@@ -74,9 +81,9 @@ jobs:
       - name: Create Audit Branch
         shell: bash
         run: |
-          git checkout -b "${{ steps.branch.outputs.name }}"
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          git checkout -b "${{ steps.branch.outputs.name }}"
           git commit --allow-empty -m "Emergency hotfix: ${{ github.event.inputs.change_ticket }}"
           git push origin "${{ steps.branch.outputs.name }}"
 
@@ -110,11 +117,30 @@ jobs:
       name: prod
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Notify Start
         run: |
           echo "HOTFIX STARTED: ${{ github.event.inputs.service }}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Verify Image Signature
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ github.event.inputs.service }}:${{ github.event.inputs.image_ref }}
+        run: |
+          cosign verify "$IMAGE_REF" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            || { echo "Image signature verification FAILED — refusing to hotfix with unsigned image"; exit 1; }
 
       - name: Execute Hotfix Deployment
         env:
@@ -155,10 +181,17 @@ jobs:
       - deploy-hotfix
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
         with:
           branch: ${{ needs.preflight.outputs.branch }}
           base: main
@@ -187,5 +220,6 @@ jobs:
           echo "- Service: ${{ github.event.inputs.service }}" >> $GITHUB_STEP_SUMMARY
           echo "- Strategy: ${{ github.event.inputs.strategy }}" >> $GITHUB_STEP_SUMMARY
           echo "- Ticket: ${{ github.event.inputs.change_ticket }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Signature verified: yes" >> $GITHUB_STEP_SUMMARY
           echo "- Audit Branch: ${{ needs.preflight.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
           echo "- Recovery PR created" >> $GITHUB_STEP_SUMMARY

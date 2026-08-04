@@ -47,6 +47,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
       - name: Build Payload (workflow_run)
         if: github.event_name == 'workflow_run'
         id: auto
@@ -137,7 +142,7 @@ jobs:
         shell: bash
         run: |
           TEXT="${{ steps.data.outputs.emoji }} *${{ steps.data.outputs.title }}*\n\n${{ steps.data.outputs.message }}"
-          curl -sS -X POST \
+          curl --max-time 20 --retry 3 --fail-with-body -sS -X POST \
             -H 'Content-type: application/json' \
             --data "{\"text\":\"$TEXT\"}" \
             "$WEBHOOK"
@@ -149,7 +154,7 @@ jobs:
         shell: bash
         run: |
           TEXT="${{ steps.data.outputs.emoji }} ${{ steps.data.outputs.title }}\n\n${{ steps.data.outputs.message }}"
-          curl -sS -X POST \
+          curl --max-time 20 --retry 3 --fail-with-body -sS -X POST \
             -H "Content-Type: application/json" \
             -d "{\"text\":\"$TEXT\"}" \
             "$WEBHOOK"
@@ -161,7 +166,7 @@ jobs:
         shell: bash
         run: |
           TEXT="${{ steps.data.outputs.emoji }} **${{ steps.data.outputs.title }}**\n\n${{ steps.data.outputs.message }}"
-          curl -sS -X POST \
+          curl --max-time 20 --retry 3 --fail-with-body -sS -X POST \
             -H "Content-Type: application/json" \
             -d "{\"content\":\"$TEXT\"}" \
             "$WEBHOOK"
@@ -173,7 +178,7 @@ jobs:
           INTEGRATION_KEY: ${{ secrets.PAGERDUTY_INTEGRATION_KEY }}
         shell: bash
         run: |
-          curl -X POST "$PD_URL/v2/enqueue" \
+          curl --max-time 20 --retry 3 --fail-with-body -X POST "$PD_URL/v2/enqueue" \
             -H "Content-type: application/json" \
             -d '{
               "routing_key": "'"$INTEGRATION_KEY"'",

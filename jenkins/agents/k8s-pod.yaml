@@ -19,7 +19,7 @@ spec:
 
   containers:
     - name: runner
-      image: ${CI_AGENT_IMAGE:-jenkins/inbound-agent:3207.vb_0791e53e9b_2}
+      image: ${CI_AGENT_IMAGE:-jenkins/inbound-agent:3384.v60d89463d9e0-2@sha256:3452f69764fffd742276590733ddc82c5643144cc78be76e0617f3f2f544425c}
       imagePullPolicy: IfNotPresent
       command:
         - cat
@@ -38,6 +38,10 @@ spec:
           value: "true"
         - name: GRADLE_OPTS
           value: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true"
+        - name: CLOUDSDK_CORE_DISABLE_PROMPTS
+          value: "1"
+        - name: AWS_EC2_METADATA_DISABLED
+          value: "false"
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:
@@ -45,11 +49,13 @@ spec:
             - ALL
         readOnlyRootFilesystem: true
         runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
 
     - name: docker
-      image: ${DOCKER_IMAGE:-docker:27.5-dind}
+      image: ${DOCKER_IMAGE:-docker:27.5-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce}
       command:
         - dockerd-entrypoint.sh
       securityContext:

@@ -56,6 +56,7 @@ module "aws_service" {
   load_balancer      = var.load_balancer
   cluster_arn        = var.aws_cluster_arn
   execution_role_arn = var.aws_execution_role_arn
+  task_role_arn      = var.aws_task_role_arn
 
   enable_logging         = var.enable_logging
   log_retention_days     = var.log_retention_days

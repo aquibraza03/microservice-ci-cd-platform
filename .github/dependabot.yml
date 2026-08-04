@@ -1,0 +1,193 @@
+# =============================================================================
+# Dependabot Configuration
+# Purpose: Automated dependency updates + security patch PRs across the monorepo
+# Security controls: version pinning, auto-merge only for patch/minor,
+#                    security updates enabled, grouped updates to reduce churn
+# =============================================================================
+version: 2
+
+updates:
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions (pin third-party actions to full SHAs after update)
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 20
+    labels:
+      - "dependencies"
+      - "security"
+    reviewers:
+      - "@platform-engineering"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    rebase-strategy: "auto"
+
+  # ---------------------------------------------------------------------------
+  # Docker base images (keeps pinned-by-digest base images current)
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/services/auth-service"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+      - "docker"
+    commit-message:
+      prefix: "chore(deps)"
+    registries:
+      docker-hub:
+        username: ${{secrets.DOCKERHUB_USERNAME}}
+        password: ${{secrets.DOCKERHUB_TOKEN}}
+
+  - package-ecosystem: "docker"
+    directory: "/templates/node-service"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+      - "docker"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "docker"
+    directory: "/templates/go-service"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+      - "docker"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "docker"
+    directory: "/templates/python-service"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+      - "docker"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+      - "docker"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # ---------------------------------------------------------------------------
+  # npm packages (per package.json directory)
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/services/auth-service"
+    schedule:
+      interval: "daily"
+    versioning-strategy: "increase-if-necessary"
+    allow:
+      - dependency-type: "production"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "npm"
+    directory: "/services/platform-smoke-test"
+    schedule:
+      interval: "daily"
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "npm"
+    directory: "/templates/node-service"
+    schedule:
+      interval: "daily"
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # ---------------------------------------------------------------------------
+  # Go modules
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "gomod"
+    directory: "/templates/go-service"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # ---------------------------------------------------------------------------
+  # Python pip packages
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/templates/python-service"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # ---------------------------------------------------------------------------
+  # Terraform providers (pinned provider versions)
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "terraform"
+    directory: "/environments/dev"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "security"
+      - "terraform"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "terraform"
+    directory: "/environments/staging"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "security"
+      - "terraform"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "terraform"
+    directory: "/environments/prod"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "security"
+      - "terraform"
+    commit-message:
+      prefix: "chore(deps)"

@@ -1,7 +1,7 @@
 # ============================================
 # Build Stage
 # ============================================
-ARG BASE_IMAGE=node:20-alpine
+ARG BASE_IMAGE=node:20-alpine@sha256:afdf98210b07b586eb71fa22ba2e432e058e4cd1304d31ed60888755b8c865fb
 # hadolint ignore=DL3006
 FROM ${BASE_IMAGE} AS builder
 
@@ -30,12 +30,16 @@ WORKDIR /app
 COPY --from=builder /build/node_modules ./node_modules
 COPY --from=builder /build/src ./src
 
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app && \
+    mkdir -p /tmp && chown -R appuser:appuser /tmp && \
+    find / -perm /4000 -type f -exec chmod u-s {} \; 2>/dev/null || true
+
 USER appuser
 
 ENV NODE_ENV=production \
     SERVICE_NAME=${SERVICE_NAME} \
-    SERVICE_PORT=${SERVICE_PORT}
+    SERVICE_PORT=${SERVICE_PORT} \
+    HOME=/app
 
 EXPOSE ${SERVICE_PORT}
 

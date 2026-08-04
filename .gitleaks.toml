@@ -1,0 +1,43 @@
+# =============================================================================
+# Gitleaks Secret Scanning Configuration
+# Extends gitleaks' bundled default rules with repository-specific
+# allowlisting to reduce false positives on intentional fixtures.
+# Used by: ci/security.sh, gitleaks GitHub Action, and pre-commit hooks.
+# =============================================================================
+
+title = "Microservice Platform Secret Scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, example files, and placeholder values that intentionally contain non-secret strings"
+paths = [
+  '''(?i)\.example$''',
+  '''(?i)test.*fixture''',
+  '''(?i)\.placeholder''',
+  '''\.env\.local$''',
+  '''\.env\.example$''',
+  '''terraform\.tfvars\.example$''',
+  '''taskdef-template''',
+  '''__tests__''',
+  '''\.github/workflows''',
+  '''docs/''',
+  '''\.secrets\.baseline''',
+]
+regexes = [
+  '''your-api-key-here''',
+  '''your-org''',
+  '''<TARGET_HOST>''',
+  '''<USERNAME>''',
+  '''<TOKEN_OR_PASSWORD>''',
+  '''changeme''',
+  '''CHANGE_ME''',
+  '''xxxxx''',
+  '''example\.com''',
+  '''example\.internal''',
+  '''123456789012''',
+  '''abcdef1234567890''',
+  '''SECRET_KEY_ID''',
+  '''SECRET_ACCESS_KEY''',
+]

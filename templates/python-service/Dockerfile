@@ -1,7 +1,7 @@
 # ============================================
 # Build Stage
 # ============================================
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim@sha256:00af38ae2ed311628970782e8a2d7f014d8909dbc63cb97bc0a158187f4db045 AS builder
 
 ARG SERVICE_NAME
 ARG SERVICE_VERSION=1.0.0
@@ -11,14 +11,14 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0,<25.0"
 WORKDIR /build
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --target=/opt/venv --upgrade -r requirements.txt
 
 COPY src/ ./src/
 
 # ============================================
 # Runtime Stage
 # ============================================
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:00af38ae2ed311628970782e8a2d7f014d8909dbc63cb97bc0a158187f4db045
 
 ARG SERVICE_NAME
 ARG SERVICE_VERSION=1.0.0
@@ -34,16 +34,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     SERVICE_NAME=${SERVICE_NAME} \
     SERVICE_PORT=${SERVICE_PORT} \
-    SERVICE_HEALTH_PATH=/health
+    SERVICE_HEALTH_PATH=/health \
+    HOME=/home/appuser
 
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /build/src ./src
 
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app /opt/venv /home/appuser && \
+    mkdir -p /tmp && chown -R appuser:appuser /tmp && \
+    find / -perm /4000 -type f -exec chmod u-s {} \; 2>/dev/null || true
 
 USER appuser
 
-ENV PATH=/root/.local/bin:${PATH}
+ENV PATH=/opt/venv/bin:${PATH} \
+    PYTHONPATH=/opt/venv
 
 EXPOSE ${SERVICE_PORT}
 

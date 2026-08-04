@@ -26,13 +26,26 @@ provider "azurerm" {
 provider "kubernetes" {
   host                   = var.kubernetes_host
   cluster_ca_certificate = base64decode(var.kubernetes_cluster_ca_certificate)
-  token                  = var.kubernetes_token
+
+  # No static service-account token is stored in state or passed as a variable.
+  # Authentication uses the AWS CLI credential chain (OIDC role in CI), which
+  # exchanges the ephemeral AWS credentials for a short-lived EKS token.
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", var.kubernetes_cluster_name, "--region", var.aws_region]
+  }
 }
 
 provider "helm" {
   kubernetes {
     host                   = var.kubernetes_host
     cluster_ca_certificate = base64decode(var.kubernetes_cluster_ca_certificate)
-    token                  = var.kubernetes_token
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", var.kubernetes_cluster_name, "--region", var.aws_region]
+    }
   }
 }

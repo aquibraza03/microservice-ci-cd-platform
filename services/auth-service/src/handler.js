@@ -1,38 +1,58 @@
-function handleRequest(req, res) {
-  const securityHeaders = {
+function securityHeaders() {
+  return {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY"
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": "default-src 'none'",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload"
   };
+}
 
-  if (req.url === "/health") {
-    res.writeHead(200, Object.assign({ "Content-Type": "application/json" }, securityHeaders));
-    res.end(JSON.stringify({ status: "ok" }));
+function getPathname(req) {
+  const url = new URL(req.url, "http://localhost");
+  return url.pathname;
+}
+
+function sendJson(res, statusCode, body) {
+  res.writeHead(statusCode, Object.assign({ "Content-Type": "application/json" }, securityHeaders()));
+  res.end(JSON.stringify(body));
+}
+
+function handleRequest(req, res) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    sendJson(res, 405, { error: "Method Not Allowed", allowedMethods: ["GET", "HEAD"] });
     return;
   }
 
-  if (req.url === "/ready") {
-    res.writeHead(200, Object.assign({ "Content-Type": "application/json" }, securityHeaders));
-    res.end(JSON.stringify({ ready: true }));
+  const pathname = getPathname(req);
+
+  if (pathname === "/health") {
+    sendJson(res, 200, { status: "ok" });
     return;
   }
 
-  if (req.url === "/login") {
-    res.writeHead(200, Object.assign({ "Content-Type": "application/json" }, securityHeaders));
-    res.end(JSON.stringify({ message: "Auth service login endpoint" }));
+  if (pathname === "/ready") {
+    sendJson(res, 200, { ready: true });
     return;
   }
 
-  if (req.url === "/env") {
-    res.writeHead(200, Object.assign({ "Content-Type": "application/json" }, securityHeaders));
-    res.end(JSON.stringify({
+  if (pathname === "/login") {
+    sendJson(res, 200, { message: "Auth service login endpoint" });
+    return;
+  }
+
+  if (pathname === "/env") {
+    sendJson(res, 200, {
       service: process.env.SERVICE_NAME || "auth-service",
       env: process.env.NODE_ENV || "dev"
-    }));
+    });
     return;
   }
 
-  res.writeHead(200, Object.assign({ "Content-Type": "text/plain" }, securityHeaders));
-  res.end("Auth service running");
+  sendJson(res, 404, { error: "Not Found" });
 }
 
 module.exports = { handleRequest };

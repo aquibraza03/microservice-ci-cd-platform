@@ -68,17 +68,17 @@ runs:
         test -d "${{ inputs.working_directory }}"
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
       with:
         terraform_version: ${{ inputs.terraform_version }}
 
     - name: Setup TFLint
       if: inputs.run_tflint == 'true'
-      uses: terraform-linters/setup-tflint@v4
+      uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
 
     - name: Setup Trivy
       if: inputs.run_trivy == 'true'
-      uses: aquasecurity/trivy-action@0.28.0
+      uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
       with:
         scan-type: fs
         hide-progress: true
@@ -125,7 +125,10 @@ runs:
       if: inputs.run_trivy == 'true'
       shell: bash
       run: |
-        trivy config ${{ inputs.working_directory }}
+        trivy config \
+          --severity HIGH,CRITICAL \
+          --exit-code 1 \
+          ${{ inputs.working_directory }}
 
     - name: Terraform Plan
       id: plan

@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-immutability
+  annotations:
+    policies.kyverno.io/title: Require Image Immutability
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Requires that container images use immutable digests rather than
+      mutable tags, preventing unauthorized image drift in production.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-image-digest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - "platform-*"
+      validate:
+        message: "Container images must use an immutable digest reference (name@sha256:...)"
+        pattern:
+          spec:
+            containers:
+              - image: "sha256:*"
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system

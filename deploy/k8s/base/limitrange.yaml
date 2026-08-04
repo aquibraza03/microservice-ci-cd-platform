@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ${SERVICE_NAME}-limits
+  namespace: ${K8S_NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: ${CPU_LIMIT}
+        memory: ${MEMORY_LIMIT}
+      defaultRequest:
+        cpu: ${CPU_REQUEST}
+        memory: ${MEMORY_REQUEST}
+      max:
+        cpu: "2"
+        memory: 2Gi
+      min:
+        cpu: 10m
+        memory: 32Mi
+    - type: Pod
+      max:
+        cpu: "4"
+        memory: 4Gi
+      min:
+        cpu: 10m
+        memory: 32Mi
+    - type: PersistentVolumeClaim
+      max:
+        storage: 10Gi
+      min:
+        storage: 100Mi

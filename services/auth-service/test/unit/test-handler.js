@@ -80,30 +80,28 @@ describe("Auth Service Handler", function () {
     });
   });
 
-  describe("Default route", function () {
-    it("should return 200 with text/plain 'Auth service running'", async function () {
-      const res = await createPromiseRequest(handleRequest, "GET", "/");
-      res.statusCode.should.equal(200);
-      res.headers["content-type"].should.equal("text/plain");
-      res.body.should.equal("Auth service running");
-    });
-  });
-
-  describe("POST to /health", function () {
-    it("should return 200 (no method restriction)", async function () {
+  describe("Method restriction", function () {
+    it("should reject non-GET methods with 405", async function () {
       const res = await createPromiseRequest(handleRequest, "POST", "/health");
       const body = JSON.parse(res.body);
-      res.statusCode.should.equal(200);
-      body.should.deep.equal({ status: "ok" });
+      res.statusCode.should.equal(405);
+      body.error.should.equal("Method Not Allowed");
+    });
+
+    it("should include security headers on responses", async function () {
+      const res = await createPromiseRequest(handleRequest, "GET", "/health");
+      res.headers["x-content-type-options"].should.equal("nosniff");
+      res.headers["x-frame-options"].should.equal("DENY");
+      res.headers["cache-control"].should.equal("no-store");
     });
   });
 
   describe("Unknown URL", function () {
-    it("should return 200 with text (not 404)", async function () {
+    it("should return 404 for unknown routes", async function () {
       const res = await createPromiseRequest(handleRequest, "GET", "/unknown");
-      res.statusCode.should.equal(200);
-      res.headers["content-type"].should.equal("text/plain");
-      res.body.should.equal("Auth service running");
+      const body = JSON.parse(res.body);
+      res.statusCode.should.equal(404);
+      body.error.should.equal("Not Found");
     });
   });
 
@@ -114,11 +112,6 @@ describe("Auth Service Handler", function () {
         const res = await createPromiseRequest(handleRequest, "GET", route);
         res.headers["content-type"].should.equal("application/json");
       }
-    });
-
-    it("should return text/plain for default route", async function () {
-      const res = await createPromiseRequest(handleRequest, "GET", "/unknown");
-      res.headers["content-type"].should.equal("text/plain");
     });
   });
 });

@@ -456,8 +456,14 @@ variable "kubernetes_cluster_ca_certificate" {
   default     = ""
 }
 
+variable "kubernetes_cluster_name" {
+  description = "EKS cluster name used for exec-based OIDC authentication"
+  type        = string
+  default     = ""
+}
+
 variable "kubernetes_token" {
-  description = "Kubernetes service account token"
+  description = "DEPRECATED: static Kubernetes service account token. Kept only for backward compatibility; OIDC exec-based authentication is used instead."
   type        = string
   default     = ""
   sensitive   = true

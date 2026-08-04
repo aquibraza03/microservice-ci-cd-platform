@@ -41,9 +41,15 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Ensure Main Branch
         run: test "${GITHUB_REF_NAME}" = "main"
@@ -90,7 +96,14 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Build Dynamic Matrix
         id: matrix
@@ -118,46 +131,171 @@ jobs:
         service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Verify Dockerfile
         run: test -f services/${{ matrix.service }}/Dockerfile
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & Push Release Image
-        uses: docker/build-push-action@v5
+        id: build
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: services/${{ matrix.service }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ matrix.service }}:${{ needs.preflight.outputs.version }}
-            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
 
-  tag-release:
-    name: Tag Release
+      - name: Trivy Scan (release gate)
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:${{ needs.preflight.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Sign Image (keyless, OIDC)
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_DIGEST: ${{ env.REGISTRY }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMAGE_DIGEST"
+
+      - name: Generate SBOM for Image (Syft)
+        shell: bash
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft "${{ env.REGISTRY }}/${{ matrix.service }}:${{ needs.preflight.outputs.version }}" \
+            -o cyclonedx-json > "${{ matrix.service }}-sbom.cdx.json"
+          syft "${{ env.REGISTRY }}/${{ matrix.service }}:${{ needs.preflight.outputs.version }}" \
+            -o spdx-json > "${{ matrix.service }}-sbom.spdx.json"
+
+      - name: Attach SBOM to Image
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_DIGEST: ${{ env.REGISTRY }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign attach sbom \
+            --sbom "${{ matrix.service }}-sbom.cdx.json" \
+            "$IMAGE_DIGEST"
+
+      - name: Record Image Digest for SLSA
+        shell: bash
+        run: |
+          echo "${{ env.REGISTRY }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}" >> digests.txt
+
+      - name: Upload SBOM + Digests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-artifacts
+          path: |
+            ${{ matrix.service }}-sbom.cdx.json
+            ${{ matrix.service }}-sbom.spdx.json
+            digests.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+  collect-digests:
+    name: Collect Release Subjects
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    needs: build
+    outputs:
+      subjects: ${{ steps.subjects.outputs.subjects }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Download Digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-artifacts
+          path: artifacts
+          merge-multiple: true
+
+      - name: Build base64 Subjects
+        id: subjects
+        shell: bash
+        run: |
+          sort -u artifacts/digests.txt > subjects.txt
+          SUBJECTS=$(base64 -w0 subjects.txt)
+          echo "subjects=$SUBJECTS" >> $GITHUB_OUTPUT
+
+  slsa:
+    name: SLSA Provenance (generic)
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      packages: write
+    needs: collect-digests
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      base64-subjects: ${{ needs.collect-digests.outputs.subjects }}
+      upload-assets: false
+      compile-generator: false
+
+  tag-release:
+    name: Tag + Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs:
       - preflight
       - build
+      - slsa
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-artifacts
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          find artifacts -maxdepth 1 -type f -name "*sbom*" -print0 | sort -z | \
+            xargs -0 sha256sum > artifacts/SHA256SUMS
+          cat artifacts/SHA256SUMS
 
       - name: Create Git Tag
         run: |
@@ -167,8 +305,11 @@ jobs:
           git push origin ${{ needs.preflight.outputs.tag }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           tag_name: ${{ needs.preflight.outputs.tag }}
           name: Release ${{ needs.preflight.outputs.version }}
           generate_release_notes: true
+          files: |
+            artifacts/SHA256SUMS
+            artifacts/*.json

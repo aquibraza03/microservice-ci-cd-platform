@@ -1,0 +1,28 @@
+# =============================================================================
+# Checkov (Infrastructure as Code Security) Configuration
+# Used by: security.yml, terraform-plan.yml, pre-commit
+# Purpose: baseline file with explicit exceptions + quiet output.
+# =============================================================================
+compact: true
+quiet: true
+download-external-modules: false
+output: cli
+soft-fail: false
+
+skip-check:
+  # Module templates intentionally allow multiple clouds; provider
+  # availability is validated at plan time via preconditions.
+  - CKV_GCP_6  # Ensure all Cloud SQL database flags set (GCP module template)
+  - CKV_AWS_338 # GuardDuty is deployed centrally, not per-service
+  - CKV_AWS_286 # ECR image scanning enforced at registry level
+  - CKV_AWS_173 # EBS encryption enforced via account default, tracked in prod
+  - CKV_AZURE_76 # Azure module is a template; prod vars enforce the control
+
+# Custom policy dir (future hardening policies live here)
+external-checks-dir:
+  - .checkov-policies
+
+framework:
+  - terraform
+  - kubernetes
+  - dockerfile

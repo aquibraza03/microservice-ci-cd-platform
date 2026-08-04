@@ -49,7 +49,11 @@ ENABLE_PDB="${ENABLE_PDB:-true}"
 PDB_MAX_UNAVAILABLE="${PDB_MAX_UNAVAILABLE:-1}"
 
 ENABLE_NETWORK_POLICY="${ENABLE_NETWORK_POLICY:-true}"
+ENABLE_QUOTA="${ENABLE_QUOTA:-true}"
+ENABLE_RBAC="${ENABLE_RBAC:-true}"
+ENABLE_EXTERNAL_SECRETS="${ENABLE_EXTERNAL_SECRETS:-true}"
 COMPLIANCE_TIER="${COMPLIANCE_TIER:-standard}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 
 RENDER_ONLY="${RENDER_ONLY:-false}"
 RENDER_OUTPUT_DIR="${RENDER_OUTPUT_DIR:-}"
@@ -83,6 +87,13 @@ ensure_namespace() {
   else
     log "Using namespace $K8S_NAMESPACE"
   fi
+  log "Enforcing Pod Security Standard (restricted) on namespace $K8S_NAMESPACE"
+  kubectl label namespace "$K8S_NAMESPACE" \
+    --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=latest \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted
 }
 
 # ============================================================================
@@ -132,6 +143,19 @@ deploy_manifests() {
 
   if [[ "$ENABLE_NETWORK_POLICY" == "true" ]]; then
     render_resource "$BASE_DIR/networkpolicy.yaml"
+  fi
+
+  if [[ "${ENABLE_QUOTA:-true}" == "true" ]]; then
+    render_resource "$BASE_DIR/limitrange.yaml"
+    render_resource "$BASE_DIR/resourcequota.yaml"
+  fi
+
+  if [[ "${ENABLE_RBAC:-true}" == "true" ]]; then
+    render_resource "$BASE_DIR/rbac.yaml"
+  fi
+
+  if [[ "${ENABLE_EXTERNAL_SECRETS:-true}" == "true" ]]; then
+    render_resource "$BASE_DIR/externalsecret.yaml"
   fi
 
   # Generate kustomization.yaml

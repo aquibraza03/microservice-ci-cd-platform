@@ -56,7 +56,7 @@ runs:
 
   steps:
     - name: Setup kubectl
-      uses: azure/setup-kubectl@v4
+      uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
 
     - name: Configure kubeconfig
       shell: bash

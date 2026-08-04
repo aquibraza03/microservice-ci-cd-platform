@@ -31,47 +31,42 @@ function makeRequest(handler, path, options) {
 describe("Auth Service Handler - Edge Cases", function () {
 
   describe("Query string handling", function () {
-    it("exact-match routes ignore query strings (fall through to default)", async function () {
+    it("known routes match even with query strings", async function () {
       const res = await makeRequest(handleRequest, "/health?verbose=1");
       res.statusCode.should.equal(200);
-      res.headers["content-type"].should.equal("text/plain");
-      res.body.should.equal("Auth service running");
+      res.headers["content-type"].should.equal("application/json");
+      JSON.parse(res.body).should.deep.equal({ status: "ok" });
     });
 
-    it("root path with query string falls through to default route", async function () {
+    it("unknown paths with query strings return 404", async function () {
       const res = await makeRequest(handleRequest, "/?foo=bar");
-      res.statusCode.should.equal(200);
-      res.body.should.equal("Auth service running");
+      res.statusCode.should.equal(404);
+      JSON.parse(res.body).error.should.equal("Not Found");
     });
   });
 
   describe("Trailing slashes", function () {
     it("/health/ is not treated as /health", async function () {
       const res = await makeRequest(handleRequest, "/health/");
-      res.statusCode.should.equal(200);
-      res.headers["content-type"].should.equal("text/plain");
-      res.body.should.equal("Auth service running");
+      res.statusCode.should.equal(404);
     });
 
-    it("root with trailing content returns default text", async function () {
+    it("unknown nested paths return 404", async function () {
       const res = await makeRequest(handleRequest, "/unknown/path");
-      res.statusCode.should.equal(200);
-      res.body.should.equal("Auth service running");
+      res.statusCode.should.equal(404);
+      JSON.parse(res.body).error.should.equal("Not Found");
     });
   });
 
   describe("HTTP methods", function () {
-    const routes = ["/health", "/ready", "/login", "/env", "/"];
-    const methods = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+    const routes = ["/health", "/ready", "/login", "/env"];
 
     for (const route of routes) {
-      for (const method of methods) {
-        it(`${method} ${route} is handled (no method restriction)`, async function () {
+      for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
+        it(`${method} ${route} is rejected with 405`, async function () {
           const res = await makeRequest(handleRequest, route, { method });
-          res.statusCode.should.equal(200);
-          if (route === "/health") {
-            res.headers["content-type"].should.equal("application/json");
-          }
+          res.statusCode.should.equal(405);
+          JSON.parse(res.body).error.should.equal("Method Not Allowed");
         });
       }
     }
@@ -80,12 +75,6 @@ describe("Auth Service Handler - Edge Cases", function () {
   describe("HEAD requests", function () {
     it("HEAD /health returns 200 with empty body", async function () {
       const res = await makeRequest(handleRequest, "/health", { method: "HEAD" });
-      res.statusCode.should.equal(200);
-      res.body.should.equal("");
-    });
-
-    it("HEAD / returns 200 with empty body", async function () {
-      const res = await makeRequest(handleRequest, "/", { method: "HEAD" });
       res.statusCode.should.equal(200);
       res.body.should.equal("");
     });
@@ -102,7 +91,7 @@ describe("Auth Service Handler - Edge Cases", function () {
   });
 
   describe("Security headers", function () {
-    const routes = ["/health", "/ready", "/login", "/env", "/"];
+    const routes = ["/health", "/ready", "/login", "/env"];
 
     for (const route of routes) {
       it(`sets X-Content-Type-Options: nosniff on ${route}`, async function () {
@@ -114,19 +103,23 @@ describe("Auth Service Handler - Edge Cases", function () {
         const res = await makeRequest(handleRequest, route);
         res.headers["x-frame-options"].should.equal("DENY");
       });
+
+      it(`sets Cache-Control: no-store on ${route}`, async function () {
+        const res = await makeRequest(handleRequest, route);
+        res.headers["cache-control"].should.equal("no-store");
+      });
     }
   });
 
   describe("Path traversal and special characters", function () {
-    it("handles URL-encoded characters in path", async function () {
+    it("handles URL-encoded characters in path safely", async function () {
       const res = await makeRequest(handleRequest, "/health%2Fadmin");
-      res.statusCode.should.equal(200);
-      res.headers["content-type"].should.equal("text/plain");
+      res.statusCode.should.equal(404);
     });
 
-    it("handles unusual but valid paths without crashing", async function () {
+    it("handles traversal attempts without crashing", async function () {
       const res = await makeRequest(handleRequest, "/../health");
-      res.statusCode.should.equal(200);
+      res.statusCode.should.be.oneOf([200, 404]);
     });
   });
 

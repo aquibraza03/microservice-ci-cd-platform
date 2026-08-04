@@ -1,7 +1,8 @@
 const http = require("http");
 const { handleRequest } = require("./handler");
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const SHUTDOWN_TIMEOUT_MS = 10000;
 
 function createServer(handler) {
   const requestHandler = handler || handleRequest;
@@ -12,10 +13,18 @@ function createServer(handler) {
 }
 
 function handleShutdown(server, options) {
-  const { exitOnClose = true, logger = console } = options || {};
-  return function onShutdownSignal() {
-    logger.log("SIGTERM received, shutting down gracefully");
+  const { exitOnClose = true, logger = console, timeoutMs = SHUTDOWN_TIMEOUT_MS } = options || {};
+  return function onShutdownSignal(signal) {
+    logger.log(`${signal} received, shutting down gracefully`);
+
+    const forceExit = setTimeout(() => {
+      logger.error("Graceful shutdown timed out, forcing exit");
+      process.exit(1);
+    }, timeoutMs);
+    forceExit.unref();
+
     server.close(() => {
+      clearTimeout(forceExit);
       if (exitOnClose) {
         process.exit(0);
       }
@@ -29,6 +38,17 @@ function startServer(config) {
   const server = opts.server || createServer(opts.handler);
 
   process.once("SIGTERM", handleShutdown(server, opts));
+  process.once("SIGINT", handleShutdown(server, opts));
+
+  server.on("error", (err) => {
+    console.error(JSON.stringify({
+      level: "error",
+      message: "Server error",
+      error: err.message,
+      stack: err.stack
+    }));
+    process.exit(1);
+  });
 
   server.listen(port, () => {
     console.log(JSON.stringify({

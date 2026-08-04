@@ -141,6 +141,20 @@ variable "execution_role_arn" {
 }
 
 # -----------------------------
+# Task Role (per-service IAM identity, least privilege)
+# -----------------------------
+variable "task_role_arn" {
+  description = "IAM role ARN assumed by the application inside the container"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.task_role_arn == null || can(regex("^arn:.*:iam::.*:role/.*", var.task_role_arn))
+    error_message = "task_role_arn must be a valid IAM role ARN."
+  }
+}
+
+# -----------------------------
 # Logging (CloudWatch)
 # -----------------------------
 variable "enable_logging" {

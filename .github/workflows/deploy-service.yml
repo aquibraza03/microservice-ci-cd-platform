@@ -24,14 +24,26 @@ on:
         required: false
         type: string
         default: "300s"
-    secrets:
-      kubeconfig:
+      verify_signature:
         required: false
-      aws_access_key_id:
-        required: false
-      aws_secret_access_key:
-        required: false
+        type: boolean
+        default: true
+      # --- OIDC-based cloud access (no static credentials) ---
       aws_region:
+        required: false
+        type: string
+        default: ""
+      aws_role_arn:
+        required: false
+        type: string
+        default: ""
+      aws_ecs_cluster:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      # Only OIDC-federated access is supported. No access keys are accepted.
+      kubeconfig:
         required: false
 
 permissions:
@@ -47,7 +59,14 @@ jobs:
     environment: ${{ inputs.environment }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Detect Deployment Target
         id: target
@@ -60,10 +79,36 @@ jobs:
           echo "type=${TYPE:-k8s}" >> $GITHUB_OUTPUT
           echo "health=${HEALTH:-${{ inputs.health_path }}}" >> $GITHUB_OUTPUT
 
+      - name: Install Cosign
+        if: inputs.verify_signature
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Verify Image Signature (Sigstore / Cosign)
+        if: inputs.verify_signature
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_REF: ${{ inputs.image_registry }}/${{ inputs.service }}:${{ inputs.image_tag }}
+        run: |
+          cosign verify "$IMAGE_REF" \
+            --certificate-identity-regexp "^https://github.com/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            || { echo "Image signature verification FAILED"; exit 1; }
+
+      - name: Assume AWS Role via OIDC (no static keys)
+        if: inputs.aws_role_arn != ''
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+          role-duration-seconds: 3600
+
       - name: Deploy Service
         env:
           IMAGE_REGISTRY: ${{ inputs.image_registry }}
           IMAGE_TAG: ${{ inputs.image_tag }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          ECS_CLUSTER: ${{ inputs.aws_ecs_cluster }}
         run: |
           chmod +x deploy/deploy.sh
           deploy/deploy.sh \
@@ -93,3 +138,5 @@ jobs:
         run: |
           echo "## Deploy: ${{ inputs.service }} -> ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "- Image: ${{ inputs.image_registry }}/${{ inputs.service }}:${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Signature verified: ${{ inputs.verify_signature }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Auth: OIDC federated" >> $GITHUB_STEP_SUMMARY

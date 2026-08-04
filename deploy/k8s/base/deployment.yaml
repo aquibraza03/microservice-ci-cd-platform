@@ -49,6 +49,9 @@ spec:
 
       automountServiceAccountToken: false
 
+      imagePullSecrets:
+        - name: ${SERVICE_NAME}-registry-pull
+
       terminationGracePeriodSeconds: 60
 
       securityContext:

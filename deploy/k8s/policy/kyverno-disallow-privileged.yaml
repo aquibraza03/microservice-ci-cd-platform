@@ -1,0 +1,65 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-capabilities-and-privileged
+  annotations:
+    policies.kyverno.io/title: Disallow Capabilities and Privileged
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Denies privileged containers, host namespaces, and requires dropping
+      all Linux capabilities with no privilege escalation.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Privileged containers are not allowed."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  privileged: "false"
+    - name: disallow-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Host namespaces are not allowed."
+        pattern:
+          spec:
+            hostPID: "false"
+            hostIPC: "false"
+            hostNetwork: "false"
+    - name: require-drop-all-and-nnp
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: >-
+          Containers must run with allowPrivilegeEscalation=false and
+          capabilities.drop containing ALL.
+        anyPattern:
+          - spec:
+              containers:
+                - securityContext:
+                    allowPrivilegeEscalation: "false"
+                    capabilities:
+                      drop:
+                        - ALL
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system

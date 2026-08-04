@@ -1,7 +1,7 @@
 # ============================================
 # Build Stage
 # ============================================
-FROM golang:1.22-alpine AS builder
+FROM golang:1.22-alpine@sha256:6d405dfc5fdf3a45df1529cf060b920041f52ce523487e0f36f02765af294a51 AS builder
 
 ARG SERVICE_NAME
 ARG SERVICE_VERSION=dev
@@ -22,14 +22,16 @@ RUN go build -ldflags="-s -w -X main.version=${SERVICE_VERSION} -X main.name=${S
 # ============================================
 # Runtime Stage (distroless for minimal attack surface)
 # ============================================
-FROM alpine:3.19
+FROM alpine:3.19@sha256:b58899f069c47216f6002a6850143dc6fae0d35eb8b0df9300bbe6327b9c2171
 
 ARG SERVICE_NAME
 ARG SERVICE_VERSION=dev
 ARG SERVICE_PORT=8080
 
 RUN apk add --no-cache ca-certificates=20230506 curl=8.5.0 && \
-    adduser -D -u 10001 appuser
+    adduser -D -u 10001 appuser && \
+    mkdir -p /tmp && chown -R appuser:appuser /tmp && \
+    find / -perm /4000 -type f -exec chmod u-s {} \; 2>/dev/null || true
 
 WORKDIR /app
 
@@ -42,7 +44,8 @@ USER appuser
 ENV SERVICE_NAME=${SERVICE_NAME} \
     SERVICE_VERSION=${SERVICE_VERSION} \
     SERVICE_PORT=${SERVICE_PORT} \
-    SERVICE_HEALTH_PATH=/health
+    SERVICE_HEALTH_PATH=/health \
+    HOME=/tmp
 
 EXPOSE ${SERVICE_PORT}
 
