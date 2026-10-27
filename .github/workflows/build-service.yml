@@ -1,0 +1,156 @@
+name: Build Service (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      registry:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+      push:
+        required: false
+        type: boolean
+        default: false
+      additional_tags:
+        required: false
+        type: string
+        default: ""
+      trivy_severity:
+        required: false
+        type: string
+        default: "HIGH,CRITICAL"
+      sign_image:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      registry_username:
+        required: false
+      registry_password:
+        required: false
+    outputs:
+      image_ref:
+        description: "Immutable image reference with digest"
+        value: ${{ jobs.build.outputs.image_ref }}
+      digest:
+        description: "Image digest"
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      image_ref: ${{ steps.digest.outputs.image_ref }}
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify Dockerfile
+        run: test -f services/${{ inputs.service }}/Dockerfile
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to Registry
+        if: inputs.push
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.registry_username || github.actor }}
+          password: ${{ secrets.registry_password || secrets.GITHUB_TOKEN }}
+
+      - name: Generate Tags
+        id: tags
+        shell: bash
+        run: |
+          TAGS="${{ inputs.registry }}/${{ inputs.service }}:${{ inputs.image_tag }}"
+          if [ -n "${{ inputs.additional_tags }}" ]; then
+            while IFS= read -r tag; do
+              [ -n "$tag" ] && TAGS="$TAGS,${{ inputs.registry }}/${{ inputs.service }}:$tag"
+            done <<< "${{ inputs.additional_tags }}"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build and Push
+        id: build
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: services/${{ inputs.service }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Trivy Scan
+        if: inputs.push == false
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          image-ref: ${{ inputs.registry }}/${{ inputs.service }}:${{ inputs.image_tag }}
+          format: sarif
+          output: trivy-${{ inputs.service }}.sarif
+          severity: ${{ inputs.trivy_severity }}
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Upload Trivy SARIF
+        if: always() && inputs.push == false
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          sarif_file: trivy-${{ inputs.service }}.sarif
+
+      - name: Capture Digest
+        id: digest
+        run: |
+          echo "image_ref=${{ inputs.registry }}/${{ inputs.service }}@${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+
+      - name: Install Cosign
+        if: inputs.push && inputs.sign_image
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Sign Image (keyless, OIDC)
+        if: inputs.push && inputs.sign_image
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_DIGEST: ${{ inputs.registry }}/${{ inputs.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMAGE_DIGEST"
+
+      - name: Attach SBOM to Image
+        if: inputs.push && inputs.sign_image
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_DIGEST: ${{ inputs.registry }}/${{ inputs.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign attach sbom --sbom "${{ inputs.registry }}/${{ inputs.service }}:${{ inputs.image_tag }}" "$IMAGE_DIGEST"
+
+      - name: Publish Summary
+        run: |
+          echo "## Build: ${{ inputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ inputs.registry }}/${{ inputs.service }}:${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Digest: ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Push: ${{ inputs.push }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Signed: ${{ inputs.push && inputs.sign_image }}" >> $GITHUB_STEP_SUMMARY

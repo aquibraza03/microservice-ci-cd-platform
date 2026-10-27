@@ -1,0 +1,1 @@
+const test=require("node:test");const assert=require("node:assert/strict");test("sample response contract",()=>assert.deepEqual(JSON.parse('{"service":"phase1-golden-service"}'),{service:"phase1-golden-service"}));

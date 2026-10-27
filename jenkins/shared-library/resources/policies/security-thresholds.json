@@ -1,0 +1,41 @@
+{
+  "default": {
+    "critical": 0,
+    "high": 3,
+    "medium": 15,
+    "low": 9999,
+    "action": "fail"
+  },
+
+  "dev": {
+    "critical": 1,
+    "high": 10,
+    "medium": 50,
+    "low": 9999,
+    "action": "warn"
+  },
+
+  "staging": {
+    "critical": 0,
+    "high": 5,
+    "medium": 25,
+    "low": 9999,
+    "action": "fail"
+  },
+
+  "prod": {
+    "critical": 0,
+    "high": 0,
+    "medium": 10,
+    "low": 9999,
+    "action": "fail"
+  },
+
+  "exceptions": {
+    "legacy-service": {
+      "high": 8,
+      "medium": 40,
+      "action": "warn"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: platform-local
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        apiVersion: kubeadm.k8s.io/v1beta4
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            fail-swap-on: "false"
+      - |
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        kind: KubeletConfiguration
+        failSwapOn: false
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+        listenAddress: 127.0.0.1
+        protocol: TCP
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry:5000"]
+      endpoint = ["http://registry:5000"]

@@ -1,0 +1,15 @@
+{
+  "name": "@saas/hooks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reusable React hooks for the Enterprise SaaS frontend",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@saas/utils": "file:../utils",
+    "react": "^19.2.0"
+  }
+}

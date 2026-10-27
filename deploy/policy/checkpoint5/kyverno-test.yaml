@@ -1,0 +1,8 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata: { name: checkpoint5-supply-chain-policy }
+policies: [require-secure-deployment.yaml]
+resources: [test/secure-resource.yaml]
+results:
+  - { policy: platform-secure-deployment, rule: immutable-image, resource: sample, kind: Deployment, result: pass }
+  - { policy: platform-secure-deployment, rule: restricted-container, resource: sample, kind: Deployment, result: pass }

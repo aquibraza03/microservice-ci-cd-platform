@@ -1,0 +1,1493 @@
+openapi: 3.0.3
+info:
+  title: Microservice Platform Control Plane API
+  version: 0.7.0
+  description: Tenant-scoped deployment pipeline with GHCR, supply-chain verification, Kubernetes rollout, health verification and rollback.
+servers: [{ url: /api/v1 }]
+security: [{ bearerAuth: [] }]
+paths:
+  /health:
+    get:
+      {
+        security: [],
+        summary: Process health,
+        responses: { "200": { description: Healthy } },
+      }
+  /ready:
+    get:
+      {
+        security: [],
+        summary: Dependency readiness,
+        responses:
+          {
+            "200": { description: Ready },
+            "503": { description: Unavailable },
+          },
+      }
+  /version:
+    get:
+      {
+        security: [],
+        summary: API version,
+        responses: { "200": { description: Version } },
+      }
+  /auth/github/login:
+    get:
+      security: []
+      summary: Begin GitHub OAuth with state and PKCE
+      responses: { "302": { description: Redirect to GitHub } }
+  /auth/github/callback:
+    get:
+      security: []
+      summary: Validate OAuth state, exchange code, provision user and issue tracked application JWT
+      parameters:
+        - { in: query, name: code, required: true, schema: { type: string } }
+        - { in: query, name: state, required: true, schema: { type: string } }
+      responses:
+        {
+          "200": { description: Authenticated session },
+          "400": { $ref: "#/components/responses/Error" },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /webhooks/github:
+    post:
+      security: []
+      summary: Verify the raw GitHub HMAC, deduplicate delivery and store supported Git events
+      parameters:
+        - {
+            in: header,
+            name: X-Hub-Signature-256,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            in: header,
+            name: X-GitHub-Event,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            in: header,
+            name: X-GitHub-Delivery,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        {
+          "202": { description: Accepted, duplicate or safely ignored },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /logout:
+    post:
+      {
+        summary: Revoke the current tracked session,
+        responses:
+          {
+            "204": { description: Logged out },
+            "401": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /me:
+    get:
+      {
+        summary: Current authenticated platform user and selected organization,
+        responses:
+          {
+            "200": { description: User },
+            "401": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations:
+    get:
+      {
+        summary: Organizations where the current user is an active member,
+        responses: { "200": { description: Organization list } },
+      }
+    post:
+      summary: Create organization with caller as owner
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/OrganizationInput" } },
+            },
+        }
+      responses:
+        {
+          "201": { description: Created },
+          "400": { $ref: "#/components/responses/Error" },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: Get an organization after membership authorization,
+        responses:
+          {
+            "200": { description: Organization },
+            "403": { $ref: "#/components/responses/Error" },
+            "404": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/current:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    put:
+      summary: Select the current organization after membership authorization
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      required: [organizationId],
+                      properties: { organizationId: { type: string } },
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "200": { description: Updated user },
+          "403": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/memberships:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List memberships (organization admin),
+        responses:
+          {
+            "200": { description: Memberships },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+    post:
+      summary: Add an existing platform user (organization admin)
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/MembershipInput" } },
+            },
+        }
+      responses:
+        {
+          "201": { description: Membership created },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/memberships/{userId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: userId, required: true, schema: { type: string } },
+      ]
+    patch:
+      summary: Change role using optimistic version (organization admin)
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      required: [role, version],
+                      properties:
+                        {
+                          role: { $ref: "#/components/schemas/Role" },
+                          version: { type: integer, minimum: 1 },
+                        },
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "200": { description: Membership updated },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/projects:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List tenant-scoped projects,
+        parameters:
+          [
+            { in: query, name: page, schema: { type: integer, minimum: 1 } },
+            {
+              in: query,
+              name: pageSize,
+              schema: { type: integer, minimum: 1, maximum: 100 },
+            },
+          ],
+        responses: { "200": { description: Projects } },
+      }
+    post:
+      {
+        summary: Create project with repository-management permission,
+        requestBody:
+          {
+            required: true,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ProjectInput" } },
+              },
+          },
+        responses:
+          {
+            "201": { description: Created },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/projects/{projectId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+      ]
+    get:
+      {
+        summary: Get tenant-scoped project,
+        responses:
+          {
+            "200": { description: Project },
+            "404": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/repositories:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List organization-scoped repository connections,
+        responses: { "200": { description: Connections } },
+      }
+  /organizations/{organizationId}/git/installations/authorize:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    post:
+      {
+        summary: Create one-time organization-bound GitHub installation authorization,
+        responses:
+          {
+            "200": { description: Server-generated GitHub authorization URL },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/git/installations/callback:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      summary: Validate state and persist verified GitHub App installation ownership
+      parameters:
+        - { in: query, name: state, required: true, schema: { type: string } }
+        - {
+            in: query,
+            name: installation_id,
+            required: true,
+            schema: { type: string, pattern: '^\\d+$' },
+          }
+      responses:
+        {
+          "200": { description: Installation connected },
+          "400": { $ref: "#/components/responses/Error" },
+          "403": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/git/installations:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List organization-owned provider installations,
+        responses: { "200": { description: Installations } },
+      }
+  /organizations/{organizationId}/git/installations/{installationId}/repositories:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/InstallationId" },
+      ]
+    get:
+      {
+        summary: List and search installation repositories with pagination,
+        responses:
+          {
+            "200": { description: GitHub repositories },
+            "429": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/git/installations/{installationId}/repositories/{providerRepositoryId}/branches:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/InstallationId" },
+        {
+          in: path,
+          name: providerRepositoryId,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    get:
+      {
+        summary: List branches for a permitted immutable provider repository ID,
+        responses:
+          {
+            "200": { description: Branches },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/git/installations/{installationId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/InstallationId" },
+      ]
+    delete:
+      {
+        summary: Disconnect installation and local repository connections,
+        responses:
+          {
+            "204": { description: Disconnected },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/projects/{projectId}/repository:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+      ]
+    post:
+      {
+        summary: Connect a verified installation repository and selected branch,
+        responses:
+          {
+            "201": { description: Connected },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+    delete:
+      {
+        summary: Disconnect a project repository connection,
+        responses: { "200": { description: Disconnected } },
+      }
+  /organizations/{organizationId}/environments:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List tenant-scoped environment references,
+        responses: { "200": { description: Environments } },
+      }
+  /organizations/{organizationId}/projects/{projectId}/services:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+      ]
+    get:
+      {
+        summary: List project service contracts,
+        responses: { "200": { description: Services } },
+      }
+    post:
+      {
+        summary: Register a repository-backed service,
+        responses:
+          {
+            "201": { description: Service created },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/projects/{projectId}/repositories/{repositoryId}/detections:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+        {
+          in: path,
+          name: repositoryId,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    post:
+      summary: Inspect an immutable commit without executing repository code
+      parameters:
+        [
+          {
+            in: header,
+            name: Idempotency-Key,
+            schema: { type: string, maxLength: 128 },
+          },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      required: [commitSha],
+                      properties:
+                        {
+                          commitSha:
+                            { type: string, pattern: "^[a-fA-F0-9]{40,64}$" },
+                        },
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "201": { description: Versioned detection result },
+          "403": { $ref: "#/components/responses/Error" },
+          "413": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/detections/{detectionId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        {
+          in: path,
+          name: detectionId,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    get:
+      {
+        summary: Read a tenant-scoped detection result and field evidence,
+        responses:
+          {
+            "200": { description: Detection result },
+            "404": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/projects/{projectId}/service-configuration/draft:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+      ]
+    get:
+      {
+        summary: Recover the current user's configuration draft,
+        responses: { "200": { description: Draft or null } },
+      }
+    put:
+      {
+        summary: Autosave a versioned draft with optimistic concurrency,
+        responses:
+          {
+            "200": { description: Saved draft },
+            "409": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/projects/{projectId}/service-configuration/validate:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+      ]
+    post:
+      {
+        summary: Server-side validate build runtime and environment settings,
+        responses: { "200": { description: Validation summary } },
+      }
+  /organizations/{organizationId}/projects/{projectId}/service-configurations:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/ProjectId" },
+      ]
+    post:
+      {
+        summary: Save a validated immutable-commit service configuration,
+        responses:
+          {
+            "201":
+              { description: Saved configuration and generated service.yml },
+            "409": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/deployments:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List filtered tenant-scoped deployments,
+        responses: { "200": { description: Deployment page } },
+      }
+    post:
+      summary: Durably create and enqueue a deployment without executing work in HTTP
+      parameters:
+        [
+          {
+            in: header,
+            name: Idempotency-Key,
+            required: true,
+            schema: { type: string, minLength: 8, maxLength: 128 },
+          },
+        ]
+      responses:
+        {
+          "201": { description: Created and queued },
+          "200": { description: Existing idempotent result },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/deployments/{deploymentId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    get:
+      {
+        summary: Get deployment details,
+        responses:
+          {
+            "200": { description: Deployment },
+            "404": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/events:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    get:
+      summary: Search and page ordered versioned deployment events
+      parameters:
+        [
+          { in: query, name: after, schema: { type: integer, minimum: 0 } },
+          {
+            in: query,
+            name: pageSize,
+            schema: { type: integer, minimum: 1, maximum: 500 },
+          },
+          { in: query, name: stage, schema: { type: string } },
+          {
+            in: query,
+            name: level,
+            schema: { type: string, enum: [debug, info, warn, error] },
+          },
+          {
+            in: query,
+            name: from,
+            schema: { type: string, format: date-time },
+          },
+          { in: query, name: to, schema: { type: string, format: date-time } },
+          { in: query, name: search, schema: { type: string } },
+        ]
+      responses: { "200": { description: Event cursor page } }
+  /organizations/{organizationId}/deployments/{deploymentId}/stages:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    get:
+      {
+        summary: Stage attempt history,
+        responses: { "200": { description: Stages } },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/cancel:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    post:
+      {
+        summary: Request cancellation; current job owner acknowledges it,
+        responses:
+          {
+            "202": { description: Cancellation requested },
+            "409": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/retry:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    post:
+      {
+        summary: Retry a failed deployment idempotently,
+        responses: { "202": { description: Queued } },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/stream:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+        { in: header, name: Last-Event-ID, schema: { type: integer } },
+      ]
+    get:
+      {
+        summary: Authorized SSE with missed-event replay,
+        responses: { "200": { description: text/event-stream } },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/logs/authorization:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    post:
+      {
+        summary: Authorize short-lived bearer-protected log download,
+        responses: { "200": { description: Download authorization } },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/logs:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    get:
+      {
+        summary: Stream an authorized redacted log download,
+        responses: { "200": { description: Redacted text stream } },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/logs/retention:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    get:
+      {
+        summary: Read retention usage limit expiry and truncation status,
+        responses: { "200": { description: Retention details } },
+      }
+  /organizations/{organizationId}/preview-policies:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    put:
+      {
+        summary: Create or update bounded preview policy,
+        responses:
+          {
+            "200": { description: Preview policy },
+            "403": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/previews:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List tenant preview instances,
+        responses: { "200": { description: Previews } },
+      }
+    post:
+      summary: Create a manual immutable preview revision
+      parameters:
+        [
+          {
+            in: header,
+            name: Idempotency-Key,
+            required: true,
+            schema: { type: string, minLength: 8, maxLength: 128 },
+          },
+        ]
+      responses:
+        {
+          "201": { description: Preview revision created },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/previews/{previewId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: previewId, required: true, schema: { type: string } },
+      ]
+    get:
+      {
+        summary: Get preview,
+        active revision and independent route state,
+        responses: { "200": { description: Preview } },
+      }
+    delete:
+      {
+        summary: Schedule ownership-safe idempotent cleanup,
+        responses: { "202": { description: Cleanup scheduled } },
+      }
+  /organizations/{organizationId}/previews/{previewId}/route:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: previewId, required: true, schema: { type: string } },
+      ]
+    post:
+      {
+        summary: Create selected Ingress and request certificate,
+        responses: { "201": { description: Route requested } },
+      }
+  /organizations/{organizationId}/previews/{previewId}/verify:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: previewId, required: true, schema: { type: string } },
+      ]
+    post:
+      {
+        summary: Reconcile route backend TLS deployment health and HTTP reachability,
+        responses:
+          {
+            "200": { description: Verified preview },
+            "409": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/previews/reconcile:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    post:
+      {
+        summary: Run expiration cleanup and certificate warning reconciliation,
+        responses: { "200": { description: Reconciliation result } },
+      }
+  /organizations/{organizationId}/domains:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      {
+        summary: List custom domains,
+        responses: { "200": { description: Domains } },
+      }
+    post:
+      {
+        summary: Normalize a domain and issue a time-limited TXT proof,
+        responses:
+          {
+            "201": { description: Verification instructions },
+            "409": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/domains/{domainId}/verify:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: domainId, required: true, schema: { type: string } },
+      ]
+    post:
+      {
+        summary: Verify domain control against the stored token hash,
+        responses:
+          {
+            "200": { description: Verified ownership },
+            "410": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/domains/{domainId}/activate:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: domainId, required: true, schema: { type: string } },
+      ]
+    post:
+      {
+        summary: Activate routing only after ownership verification,
+        responses:
+          {
+            "200": { description: Route and certificate requested },
+            "409": { $ref: "#/components/responses/Error" },
+          },
+      }
+  /organizations/{organizationId}/domains/{domainId}:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { in: path, name: domainId, required: true, schema: { type: string } },
+      ]
+    delete:
+      {
+        summary: Remove domain challenge owned route and certificate,
+        responses: { "200": { description: Removed } },
+      }
+  /organizations/{organizationId}/deployments/{deploymentId}/rollback-targets:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    get:
+      summary: List tenant-scoped healthy immutable rollback targets
+      responses:
+        "200": { description: Eligible targets }
+        "403": { $ref: "#/components/responses/Error" }
+  /organizations/{organizationId}/deployments/{deploymentId}/rollback-comparison:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+        {
+          in: query,
+          name: targetDeploymentId,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    get:
+      summary: Compare immutable releases without returning secret values
+      responses:
+        "200": { description: Rollback comparison and compatibility result }
+  /organizations/{organizationId}/deployments/{deploymentId}/rollback-approvals:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+      ]
+    post:
+      summary: Approve one exact source and target rollback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetDeploymentId, justification]
+              properties:
+                targetDeploymentId: { type: string }
+                justification: { type: string, minLength: 8 }
+      responses:
+        "201": { description: Approval recorded }
+  /organizations/{organizationId}/deployments/{deploymentId}/rollback:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        { $ref: "#/components/parameters/DeploymentId" },
+        {
+          in: header,
+          name: Idempotency-Key,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    post:
+      summary: Create a new safe rollback deployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetDeploymentId, reason, expectedStateVersion]
+              properties:
+                targetDeploymentId: { type: string }
+                reason: { type: string, minLength: 8 }
+                expectedStateVersion: { type: integer }
+                approvalId: { type: string }
+                emergencyOverride: { type: boolean }
+                overrideJustification: { type: string, minLength: 12 }
+      responses:
+        "202": { description: Rollback queued as a new deployment }
+        "409": { $ref: "#/components/responses/Error" }
+  /organizations/{organizationId}/environments/{environment}/rollback-policy:
+    parameters:
+      [
+        { $ref: "#/components/parameters/OrganizationId" },
+        {
+          in: path,
+          name: environment,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    put:
+      summary: Configure approval and database compatibility rollback gates
+      responses:
+        "200": { description: Policy updated }
+  /organizations/{organizationId}/providers:
+    get:
+      summary: List backend-derived provider support and capabilities
+      parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+      responses: { "200": { description: Provider capability catalog } }
+  /organizations/{organizationId}/provider-connections:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      summary: List safe cloud connection metadata
+      responses: { "200": { description: Cloud connections } }
+    post:
+      summary: Create an AWS AssumeRole connection and one-time trust policy
+      parameters:
+        [
+          {
+            in: header,
+            name: Idempotency-Key,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        {
+          "201": { description: AWS connection draft created },
+          "422": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/provider-connections/{connectionId}:
+    patch:
+      summary: Replace scoped AWS connection configuration using optimistic concurrency
+      parameters:
+        [
+          { $ref: "#/components/parameters/OrganizationId" },
+          {
+            in: path,
+            name: connectionId,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses: { "200": { description: New configuration version } }
+  /organizations/{organizationId}/provider-connections/{connectionId}/{action}:
+    post:
+      summary: Validate, disable or revoke a cloud connection
+      parameters:
+        [
+          { $ref: "#/components/parameters/OrganizationId" },
+          {
+            in: path,
+            name: connectionId,
+            required: true,
+            schema: { type: string },
+          },
+          {
+            in: path,
+            name: action,
+            required: true,
+            schema: { type: string, enum: [validate, disable, revoke] },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Persisted lifecycle state },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/deployment-targets:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      summary: List customer-owned Kubernetes targets
+      parameters: [{ in: query, name: usable, schema: { type: boolean } }]
+      responses: { "200": { description: Safe target metadata } }
+    post:
+      summary: Create a Kubernetes target independently of cloud connections
+      parameters:
+        [
+          {
+            in: header,
+            name: Idempotency-Key,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses: { "201": { description: Kubernetes target draft created } }
+  /organizations/{organizationId}/deployment-targets/{targetId}/{action}:
+    post:
+      summary: Validate, rotate credentials, disable or revoke a target
+      parameters:
+        [
+          { $ref: "#/components/parameters/OrganizationId" },
+          {
+            in: path,
+            name: targetId,
+            required: true,
+            schema: { type: string },
+          },
+          {
+            in: path,
+            name: action,
+            required: true,
+            schema:
+              {
+                type: string,
+                enum: [validate, rotate-credential, disable, revoke],
+              },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Persisted target state },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/effective-permissions:
+    get:
+      summary: Return the actor's current backend-evaluated permissions and scope assignments
+      parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+      responses:
+        { "200": { description: Effective permission decision inputs } }
+  /organizations/{organizationId}/invitations:
+    post:
+      summary: Create a hashed, expiring organization invitation
+      parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+      responses: { "201": { description: One-time invitation issued } }
+  /organizations/{organizationId}/invitations/{invitationId}/accept:
+    post:
+      summary: Accept an invitation once for the authenticated identity
+      parameters:
+        [
+          { $ref: "#/components/parameters/OrganizationId" },
+          {
+            in: path,
+            name: invitationId,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Membership created },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/secret-references:
+    parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+    get:
+      summary: List masked managed-secret reference metadata
+      responses:
+        { "200": { description: Secret reference metadata; never plaintext } }
+    post:
+      summary: Create an external runtime-secret reference
+      responses: { "201": { description: Reference draft created } }
+  /organizations/{organizationId}/secret-references/{secretReferenceId}/{action}:
+    post:
+      summary: Validate, rotate, disable or revoke a secret reference
+      parameters:
+        [
+          { $ref: "#/components/parameters/OrganizationId" },
+          {
+            in: path,
+            name: secretReferenceId,
+            required: true,
+            schema: { type: string },
+          },
+          {
+            in: path,
+            name: action,
+            required: true,
+            schema: { type: string, enum: [validate, rotate, disable, revoke] },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Safe persisted reference state },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/services/{serviceId}/secret-references:
+    put:
+      summary: Attach versioned secret references to a service using optimistic concurrency
+      parameters:
+        [
+          { $ref: "#/components/parameters/OrganizationId" },
+          {
+            in: path,
+            name: serviceId,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses: { "200": { description: Reference attachment metadata } }
+  /organizations/{organizationId}/approval-policies:
+    parameters:
+      [
+        {
+          name: organizationId,
+          in: path,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    get:
+      summary: List approval policies
+      responses: { "200": { description: Policies } }
+    put:
+      summary: Create or version an approval policy after satisfiability validation
+      responses:
+        {
+          "200": { description: Policy activated },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/approvals:
+    parameters:
+      [
+        {
+          name: organizationId,
+          in: path,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    get:
+      summary: List authorized approval inbox
+      responses: { "200": { description: Approval requests } }
+  /organizations/{organizationId}/approvals/{approvalId}:
+    parameters:
+      - {
+          name: organizationId,
+          in: path,
+          required: true,
+          schema: { type: string },
+        }
+      - { name: approvalId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Read immutable approval snapshot and current state
+      responses: { "200": { description: Approval request } }
+  /organizations/{organizationId}/approvals/{approvalId}/approve:
+    post:
+      summary: Approve and, when satisfied, atomically release one protected execution
+      parameters:
+        - {
+            name: organizationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: approvalId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        {
+          "200": { description: Approval decision },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/approvals/{approvalId}/reject:
+    post:
+      summary: Reject a pending approval with a safe reason
+      parameters:
+        - {
+            name: organizationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: approvalId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses: { "200": { description: Rejected } }
+  /organizations/{organizationId}/security-policies:
+    get:
+      summary: List Kyverno policy catalogue and truthful target status
+      parameters:
+        - {
+            name: organizationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: targetId, in: query, schema: { type: string } }
+      responses: { "200": { description: Policy catalogue } }
+  /organizations/{organizationId}/policy-exceptions:
+    parameters:
+      [
+        {
+          name: organizationId,
+          in: path,
+          required: true,
+          schema: { type: string },
+        },
+      ]
+    get:
+      summary: List scoped time-limited policy exceptions
+      responses: { "200": { description: Exceptions } }
+    post:
+      summary: Request a policy exception
+      responses: { "201": { description: Pending exception } }
+  /organizations/{organizationId}/policy-exceptions/{exceptionId}/approve:
+    post:
+      summary: Approve an exact exception after version revalidation
+      parameters:
+        - {
+            name: organizationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: exceptionId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses: { "200": { description: Approved exception } }
+  /organizations/{organizationId}/deployments/{deploymentId}/drift:
+    post:
+      summary: Run read-only drift detection without reading secret plaintext
+      parameters:
+        - {
+            name: organizationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: deploymentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses: { "200": { description: Drift report } }
+  /organizations/{organizationId}/audit/events:
+    get:
+      summary: Search tenant-scoped audit events
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - { name: after, in: query, schema: { type: integer, minimum: 0 } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 200 },
+          }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: actorId, in: query, schema: { type: string } }
+        - { name: resourceType, in: query, schema: { type: string } }
+        - { name: resourceId, in: query, schema: { type: string } }
+        - { name: result, in: query, schema: { type: string } }
+        - { name: requestId, in: query, schema: { type: string } }
+        - { name: correlationId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        {
+          "200": { description: Stable sequence-ordered audit page },
+          "403": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/audit/integrity/verify:
+    post:
+      summary: Verify an audit-chain range
+      parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+      responses: { "200": { description: Integrity result and checkpoint } }
+  /organizations/{organizationId}/audit/exports:
+    post:
+      summary: Request a bounded JSON Lines audit export
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        {
+          "202":
+            { description: Export request state and one-time download grant },
+        }
+  /organizations/{organizationId}/audit/exports/{exportId}/download:
+    get:
+      summary: Download an audit export with a short-lived one-time grant
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - {
+            name: exportId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: X-Audit-Download-Token,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        {
+          "200": { description: audit-jsonl-v1 stream },
+          "410": { $ref: "#/components/responses/Error" },
+        }
+  /organizations/{organizationId}/audit/retention:
+    get:
+      summary: Read audit retention metadata
+      parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+      responses: { "200": { description: Retention metadata } }
+    put:
+      summary: Change audit retention as an owner
+      parameters: [{ $ref: "#/components/parameters/OrganizationId" }]
+      responses: { "200": { description: Updated retention metadata } }
+  /internal/metrics:
+    get:
+      summary: Internal Prometheus metrics scrape endpoint
+      description: Requires an internal bearer metrics token and must not be publicly routed.
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string, pattern: "^Bearer " }
+      responses:
+        "200": { description: Prometheus text exposition }
+        "404": { description: Hidden from unauthorized callers }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    OrganizationId:
+      {
+        in: path,
+        name: organizationId,
+        required: true,
+        schema: { type: string },
+      }
+    ProjectId:
+      { in: path, name: projectId, required: true, schema: { type: string } }
+    InstallationId:
+      {
+        in: path,
+        name: installationId,
+        required: true,
+        schema: { type: string },
+      }
+    DeploymentId:
+      {
+        in: path,
+        name: deploymentId,
+        required: true,
+        schema: { type: string, format: uuid },
+      }
+  schemas:
+    Role: { type: string, enum: [owner, admin, developer, operator, viewer] }
+    DeploymentState:
+      {
+        type: string,
+        enum:
+          [
+            queued,
+            validating,
+            testing,
+            scanning,
+            building,
+            build_complete,
+            pushing,
+            deploying,
+            verifying,
+            ready,
+            failed,
+            cancel_requested,
+            cancelled,
+            rollback_queued,
+            rolling_back,
+            rolled_back,
+          ],
+      }
+    DeploymentEvent:
+      type: object
+      required:
+        [
+          schemaVersion,
+          sequence,
+          deploymentId,
+          stage,
+          stateVersion,
+          timestamp,
+          level,
+          source,
+          attempt,
+          eventType,
+          safeMessage,
+          metadata,
+        ]
+      properties:
+        {
+          schemaVersion: { type: string, enum: [deployment-event.v1] },
+          sequence: { type: integer },
+          deploymentId: { type: string },
+          stage: { type: [string, "null"] },
+          stateVersion: { type: [integer, "null"] },
+          timestamp: { type: string, format: date-time },
+          level: { type: string, enum: [debug, info, warn, error] },
+          source: { type: string },
+          attempt: { type: integer },
+          eventType: { type: string },
+          safeMessage: { type: string },
+          metadata: { type: object, additionalProperties: true },
+        }
+    ImageMetadata:
+      {
+        type: object,
+        required:
+          [registry, repository, tags, digest, scanStatus, signatureStatus],
+        properties:
+          {
+            registry: { type: string },
+            repository: { type: string },
+            tags: { type: array, items: { type: string } },
+            digest: { type: string, pattern: "^sha256:[a-f0-9]{64}$" },
+            scanStatus: { type: string },
+            sbomReference: { type: string },
+            provenanceReference: { type: string },
+            signatureStatus: { type: string, enum: [verified, failed] },
+          },
+      }
+    OrganizationInput:
+      {
+        type: object,
+        required: [name, slug],
+        properties:
+          {
+            name: { type: string },
+            slug: { type: string },
+            displayName: { type: string },
+          },
+      }
+    ProjectInput:
+      {
+        type: object,
+        required: [name, slug],
+        properties:
+          {
+            name: { type: string },
+            slug: { type: string },
+            description: { type: string },
+          },
+      }
+    MembershipInput:
+      {
+        type: object,
+        required: [userId, role],
+        properties:
+          {
+            userId: { type: string },
+            role: { $ref: "#/components/schemas/Role" },
+          },
+      }
+    Error:
+      {
+        type: object,
+        required: [error],
+        properties:
+          {
+            error:
+              {
+                type: object,
+                required: [code, message, requestId],
+                properties:
+                  {
+                    code: { type: string },
+                    message: { type: string },
+                    requestId: { type: string },
+                  },
+              },
+          },
+      }
+  responses:
+    Error:
+      {
+        description: Safe structured error,
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/Error" } },
+          },
+      }

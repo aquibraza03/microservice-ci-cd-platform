@@ -1,0 +1,25 @@
+{
+  "checkpoint": "Phase 2 Part 1",
+  "observedAt": "2026-09-14T00:00:00Z",
+  "scope": ["secure service auto-detection", "dashboard service configuration"],
+  "tier1": ["service.yml", "Dockerfile", "Node.js package.json", "monorepo candidates"],
+  "tier2": {"status": "experimental-recognition-only", "runtimes": ["python", "go", "java-maven", "java-gradle"]},
+  "baseline": {"phase1RegressionSuites": "passed", "postgresIntegration": "blocked-no-server", "architectureAmendment": false},
+  "security": {"executesRepositoryCode": false, "followsSymlinks": false, "readsEnvFiles": false, "storesTransientSecretValues": false, "tenantScoped": true},
+  "results": [
+    {"command":"control-plane npm ci","status":"passed","detail":"217 locked packages"},
+    {"command":"control-plane npm run lint","status":"passed"},
+    {"command":"control-plane npm run test:all","status":"passed","detail":"13 unit, 1 HTTP, 30 deployment, 9 detection/configuration, 24 security"},
+    {"command":"control-plane npm run test:migration:contract","status":"passed"},
+    {"command":"control-plane npm audit --omit=dev","status":"passed","detail":"0 vulnerabilities"},
+    {"command":"frontend npm ci","status":"passed","detail":"494 locked packages"},
+    {"command":"frontend npm run lint","status":"passed","detail":"0 errors, 41 pre-existing warnings"},
+    {"command":"frontend npm run typecheck","status":"passed"},
+    {"command":"frontend npm test","status":"passed","detail":"13 files, 93 tests"},
+    {"command":"frontend npm run build","status":"passed","detail":"20 routes including /services/configure"},
+    {"command":"frontend npm audit --omit=dev","status":"passed","detail":"0 vulnerabilities"},
+    {"command":"npm run test:postgres","status":"blocked","detail":"ECONNREFUSED 127.0.0.1:5432"},
+    {"command":"npm run test:migration:database","status":"blocked","detail":"ECONNREFUSED 127.0.0.1:5432"},
+    {"command":"live GitHub immutable checkout","status":"not run","detail":"GitHub App credentials unavailable"}
+  ]
+}

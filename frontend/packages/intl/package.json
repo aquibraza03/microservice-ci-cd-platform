@@ -1,0 +1,15 @@
+{
+  "name": "@saas/intl",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internationalization foundation: typed message dictionaries, locale store, and locale-aware formatters",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@saas/utils": "file:../utils",
+    "react": "^19.2.0"
+  }
+}

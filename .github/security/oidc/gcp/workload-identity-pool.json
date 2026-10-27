@@ -1,0 +1,12 @@
+{
+  "name": "github-actions-platform-oidc-pool",
+  "description": "Workload identity pool for GitHub Actions on the platform repository",
+  "provider": "projects/GCP_PROJECT_ID/locations/global/workloadIdentityPools/github-actions-platform-oidc-pool/providers/github-actions-platform",
+  "provider_uri": "https://token.actions.githubusercontent.com",
+  "attribute_mapping": {
+    "google.subject": "assertion.sub",
+    "attribute.repository": "assertion.repository",
+    "attribute.ref": "assertion.ref",
+    "attribute.environment": "assertion.environment"
+  }
+}

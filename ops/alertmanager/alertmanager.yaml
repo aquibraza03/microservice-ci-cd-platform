@@ -1,0 +1,22 @@
+route:
+  receiver: test-receiver
+  group_by: [alertname, service, cluster]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: test-receiver
+      matchers: ['maintenance!="true"']
+      continue: false
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity=~"high|warning|informational"']
+    equal: [service, cluster]
+  - source_matchers: ['alertname="WorkerFleetUnavailable"']
+    target_matchers: ['alertname=~"QueueBacklog|OldestJobAgeHigh"']
+    equal: [cluster]
+receivers:
+  - name: test-receiver
+    webhook_configs:
+      - url: http://alert-receiver:8080/test-only
+        send_resolved: true

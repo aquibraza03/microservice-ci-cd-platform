@@ -1,0 +1,11 @@
+{
+  "phase": "2-part-2",
+  "status": "functionally-verified-with-external-acceptance-pending",
+  "scope": ["secure-streaming-logs", "truthful-live-status", "deployment-detail-timeline"],
+  "excluded": ["preview-deployments", "generated-domains", "rollback"],
+  "functional": {"backendDeploymentTests": 36, "frontendTestFiles": 13, "frontendTests": 93, "typecheck": "passed", "frontendBuild": "passed", "migrationContract": "passed"},
+  "structural": ["postgres-event-sequencing", "authenticated-sse", "last-event-id-replay", "heartbeat", "backpressure", "connection-limits", "historical-filters", "streamed-download", "reconciliation"],
+  "loadTested": false,
+  "externalAcceptance": {"postgres": "not-run", "redis": "not-run", "github": "not-run", "ghcr": "not-run", "kubernetes": "not-run"},
+  "notes": ["Historical checkpoint: rollback was intentionally unavailable here and is implemented in Part 4", "Existing non-error frontend lint warnings remain"]
+}

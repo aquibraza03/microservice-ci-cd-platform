@@ -1,0 +1,79 @@
+{
+  "phase": "2-part-4-final",
+  "verifiedAt": "2026-09-15T00:00:00Z",
+  "overallClassification": "partially implemented",
+  "automated": {
+    "backend": { "passed": 115, "failed": 0 },
+    "rollback": { "passed": 10, "failed": 0 },
+    "frontend": { "filesPassed": 14, "passed": 94, "failed": 0 },
+    "migrationContract": "passed",
+    "backendLint": "passed",
+    "frontendFormatLintTypecheckBuild": "passed",
+    "shellSyntax": "passed",
+    "productionDependencyAudit": { "backendVulnerabilities": 0, "frontendVulnerabilities": 0 },
+    "loadTested": false
+  },
+  "acceptance": {
+    "status": "blocked",
+    "firstObservedBlocker": "missing required command: gh",
+    "additionalBlockers": ["docker unavailable", "kind unavailable", "kubectl unavailable", "credentials unavailable"],
+    "evidence": {
+      "repository": null,
+      "branch": null,
+      "commitSha": null,
+      "detectionResultId": null,
+      "configurationVersion": null,
+      "deploymentId": null,
+      "imageDigest": null,
+      "kubernetesNamespace": null,
+      "generatedUrl": null,
+      "healthResult": null,
+      "previewId": null,
+      "previewUrl": null,
+      "cleanupResult": null,
+      "secondDeployment": null,
+      "rollbackDeployment": null,
+      "targetDigest": null,
+      "finalObservedDigest": null,
+      "finalHealthResponse": null
+    }
+  },
+  "features": {
+    "rollbackEligibility": "implemented and locally verified",
+    "databaseCompatibilityPolicy": "implemented and locally verified",
+    "approvalAndEmergencyOverride": "implemented and locally verified",
+    "rollbackConcurrencyRecovery": "implemented and locally verified",
+    "rollbackRuntimeProviderPath": "implemented and locally verified",
+    "realKindRollback": "implemented but blocked from verification",
+    "dashboardRollback": "implemented and locally verified",
+    "logsStatusTenantIsolation": "implemented and locally verified",
+    "previewAdapterPath": "implemented and locally verified",
+    "realPreviewCleanupAndLocalUrl": "implemented but blocked from verification",
+    "postgresPreviewStore": "partially implemented",
+    "publicDnsTrustedTls": "implemented but blocked from verification"
+  },
+  "security": {
+    "viewerRejected": true,
+    "developerRejected": true,
+    "crossTenantRejected": true,
+    "secretValuesExcludedFromComparison": true,
+    "approvalBoundToExactTarget": true,
+    "databaseMigrationsNeverAutomaticallyReversed": true,
+    "failedVerificationCannotProduceRolledBack": true,
+    "productionSampleDashboardRejected": true
+  },
+  "exitGate": {
+    "dashboardRollbackRestoredRealDigest": false,
+    "historicalRecordsUnchanged": true,
+    "databasePolicyEnforced": true,
+    "failureCannotProduceRolledBack": true,
+    "orderedLogsAndStatus": true,
+    "realPreviewCleanupVerified": false,
+    "realLocalGeneratedUrlVerified": false,
+    "productionUiFakeDataRejected": true,
+    "syntheticSecretRegressionPassed": true,
+    "tenantIsolationPassed": true,
+    "fullLocalGoldenPathPassed": false,
+    "allAutomatedRegressionsPassed": true
+  }
+}

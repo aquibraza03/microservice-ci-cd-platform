@@ -1,0 +1,44 @@
+{
+  "phase": "2-part-3",
+  "verifiedAt": "2026-09-15T00:00:00Z",
+  "rollbackImplemented": false,
+  "result": "automated-gates-passed-external-infrastructure-not-verified",
+  "tests": {
+    "backend": { "passed": 105, "failed": 0 },
+    "part3": { "passed": 22, "failed": 0 },
+    "frontend": { "filesPassed": 13, "passed": 93, "failed": 0 },
+    "migrationContract": "passed",
+    "backendLint": "passed",
+    "frontendFormatLintTypecheckBuild": "passed",
+    "loadTested": false
+  },
+  "functional": [
+    "immutable preview controller and idempotent PR lifecycle",
+    "fork trust and protected-secret restriction",
+    "quotas, expiration, cleanup and orphan reconciliation",
+    "generated hostname and IDNA security",
+    "Ingress and cert-manager adapter behavior",
+    "custom-domain proof, uniqueness, tenant ownership and removal",
+    "truthful route and certificate failure states"
+  ],
+  "structural": [
+    "additive PostgreSQL schema",
+    "Ingress-only Kubernetes routing",
+    "cert-manager lifecycle integration",
+    "injectable DNS and external HTTP verification boundary",
+    "dashboard, API and OpenAPI surface"
+  ],
+  "notVerified": [
+    "live Kind URL",
+    "production Kubernetes target",
+    "public DNS resolution",
+    "trusted public certificate issuance or renewal",
+    "load behavior",
+    "production PostgreSQL preview-store adapter integration"
+  ],
+  "truthfulness": {
+    "localDoesNotImplyPublic": true,
+    "certificateManifestDoesNotImplyReady": true,
+    "publicVerificationFailsClosedWithoutExternalVerifier": true
+  }
+}

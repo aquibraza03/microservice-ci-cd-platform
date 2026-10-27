@@ -1,0 +1,63 @@
+# Security scan artifacts
+trivy/
+reports/
+.sarif/
+*.sarif
+npm-audit.json
+
+# Downloads
+bin/
+*.exe
+
+# Test coverage artifacts
+coverage/
+.nyc_output/
+*.lcov
+.coverage
+coverage*.json
+junit*.xml
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Generated env files
+environments/*/env.example
+
+# Build artifacts
+artifacts/
+build/
+
+# Local build output
+main
+
+# Dependencies
+node_modules/
+vendor/
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment overrides
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Framework and local runtime state
+.next/
+.cache/
+.kind/
+.local/

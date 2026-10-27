@@ -1,0 +1,25 @@
+# Node modules (must be installed inside container)
+node_modules/
+npm-debug.log*
+
+# Source maps and test files
+*.map
+*.test.js
+*.spec.js
+__tests__/
+test/
+tests/
+coverage/
+
+# Environment
+.env
+.env.*
+*.env
+
+# Git
+.git/
+.gitignore
+
+# OS files
+.DS_Store
+Thumbs.db

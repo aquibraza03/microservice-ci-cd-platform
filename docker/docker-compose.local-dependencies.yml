@@ -1,0 +1,60 @@
+name: microservice-platform-local
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-platform_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_pg_7f3c_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-platform_control_plane}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [platform-local]
+
+  redis:
+    image: redis:7.4.1-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-56379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [platform-local]
+
+  registry:
+    image: registry:2.8.3
+    profiles: ["kind"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REGISTRY_PORT:-5001}:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/v2/ >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [platform-local]
+
+networks:
+  platform-local:
+    name: microservice-platform-local
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  registry-data:

@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-custom-rules
+  namespace: falco
+  labels:
+    app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/managed-by: kustomize
+data:
+  platform_runtime.yaml: |
+    - rule: Terminal shell in platform pod
+      desc: Detect shell access inside a platform microservice container
+      condition: >
+        spawned_process and container and
+        container.image.repository startswith ghcr.io and
+        proc.name in (sh, bash, ash, dash, zsh)
+      output: >
+        Shell %proc.name launched in container %container.name
+        (image=%container.image.repository) inside pod %k8s.pod.name
+      priority: CRITICAL
+      tags: [platform, tty, shell]
+
+    - rule: Write below default binary dir in platform pod
+      desc: Detect writes to binary directories from platform containers
+      condition: >
+        evt.dir in (open, openat, rename, write) and
+        container.image.repository startswith ghcr.io and
+        evt.arg[1] startswith /usr/bin or
+        evt.arg[1] startswith /bin
+      output: >
+        File below a binary directory %evt.arg[1] modified in container
+        %container.name (image=%container.image.repository) pod %k8s.pod.name
+      priority: CRITICAL
+      tags: [platform, filesystem, mitre_persistence]
+
+    - rule: Outbound connection to known bad IP from platform pod
+      desc: Detect egress traffic to threat-intel flagged destinations
+      condition: >
+        outbound and container.image.repository startswith ghcr.io
+      output: >
+        Outbound connection %fd.name from container %container.name
+        (image=%container.image.repository) pod %k8s.pod.name
+      priority: WARNING
+      tags: [platform, network, mitre_exfiltration]
+
+    - rule: Privilege escalation attempt in platform pod
+      desc: Detect setuid/setgid binary execution inside platform containers
+      condition: >
+        evt.type in (execve, execveat) and
+        container.image.repository startswith ghcr.io and
+        evt.arg[1] in (/usr/bin/sudo, /bin/su, /usr/bin/pkexec)
+      output: >
+        Privilege escalation binary %evt.arg[1] executed in container
+        %container.name pod %k8s.pod.name
+      priority: CRITICAL
+      tags: [platform, process, mitre_privilege_escalation]

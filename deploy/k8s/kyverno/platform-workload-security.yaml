@@ -1,0 +1,67 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: platform-workload-security
+  labels:
+    app.kubernetes.io/managed-by: platform-control-plane
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: secure-pod-context
+      match:
+        any:
+          - resources:
+              kinds: [Deployment]
+      validate:
+        message: Workloads must use the platform restricted security context
+        pattern:
+          spec:
+            template:
+              spec:
+                hostPID: false
+                hostIPC: false
+                hostNetwork: false
+                automountServiceAccountToken: false
+                securityContext:
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - image: "*@sha256:*"
+                    securityContext:
+                      privileged: false
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: [ALL]
+                    resources:
+                      requests:
+                        "?*": "?*"
+                      limits:
+                        "?*": "?*"
+    - name: require-ownership-labels
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, Service, Ingress]
+      validate:
+        message: Platform ownership labels are required
+        pattern:
+          metadata:
+            labels:
+              platform.example/organization: "?*"
+              platform.example/project: "?*"
+              platform.example/service: "?*"
+    - name: block-hostpath
+      match:
+        any:
+          - resources:
+              kinds: [Pod, Deployment]
+      validate:
+        message: hostPath and Docker socket mounts are prohibited
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.volumes[?hostPath] | length(@) }}"
+                operator: GreaterThan
+                value: 0

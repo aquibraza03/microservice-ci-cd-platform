@@ -1,0 +1,68 @@
+# =============================================================================
+# Pre-commit Hooks
+# Enforces security and quality gates on every commit BEFORE they reach CI.
+# Install with: pre-commit install --hook-type pre-commit --hook-type pre-push
+# =============================================================================
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        args:
+          - --config=.gitleaks.toml
+          - --redact
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ["--unsafe"]
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+      - id: forbid-new-submodules
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]
+
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
+      - id: script-must-have-extension
+      - id: script-must-not-have-extension
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-go
+    rev: v1.0.1
+    hooks:
+      - id: checkmake
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.88.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+      - id: terraform_tflint
+      - id: checkov
+        args:
+          - --args=--config-file .checkov.yml
+
+  - repo: https://github.com/aquasecurity/tfsec-prerelease
+    rev: v1.28.1
+    hooks:
+      - id: tfsec
+        args: ["--config-file", ".tfsec.yml"]
+
+  - repo: https://github.com/IamTheFij/docker-pre-commit
+    rev: v3.0.1
+    hooks:
+      - id: hadolint
+        args: ["--config", ".hadolint.yml"]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]

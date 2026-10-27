@@ -1,0 +1,105 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.platform</groupId>
+  <artifactId>platform-shared-library</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Platform Jenkins Shared Library</name>
+  <description>Enterprise shared library for microservice CI/CD pipelines</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+    <jenkins.pipeline.unit.version>1.0</jenkins.pipeline.unit.version>
+    <groovy.version>2.4.21</groovy.version>
+    <junit.version>4.13.2</junit.version>
+    <powermock.version>2.0.9</powermock.version>
+  </properties>
+
+  <dependencies>
+    <!-- Jenkins Pipeline Unit -->
+    <dependency>
+      <groupId>com.lesfurets</groupId>
+      <artifactId>jenkins-pipeline-unit</artifactId>
+      <version>${jenkins.pipeline.unit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Groovy -->
+    <dependency>
+      <groupId>org.codehaus.groovy</groupId>
+      <artifactId>groovy-all</artifactId>
+      <version>${groovy.version}</version>
+      <scope>provided</scope>
+      <type>pom</type>
+    </dependency>
+
+    <!-- JUnit -->
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- PowerMock for mocking static methods -->
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-module-junit4</artifactId>
+      <version>${powermock.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-api-mockito2</artifactId>
+      <version>${powermock.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.1.2</version>
+        <configuration>
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/*Test.groovy</include>
+          </includes>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <version>3.0.2</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>compile</goal>
+              <goal>compileTests</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

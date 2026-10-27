@@ -1,0 +1,62 @@
+apiVersion: platform/v1
+kind: Service
+
+metadata:
+  name: {{SERVICE_NAME}}
+  version: ${PLATFORM_VERSION}
+  labels:
+    service: {{SERVICE_NAME}}
+    environment: ${ENVIRONMENT}
+
+spec:
+  profile: ${PLATFORM_PROFILE}
+
+  image:
+    repository: ${IMAGE_REPOSITORY}
+    tag: ${IMAGE_TAG}
+    pull_policy: ${IMAGE_PULL_POLICY}
+
+  runtime:
+    language: go
+    entrypoint: ./app
+
+  network:
+    port: ${SERVICE_PORT}
+    health: ${SERVICE_HEALTH_PATH}
+    readiness: ${SERVICE_READY_PATH}
+
+  replicas: ${REPLICAS}
+
+  resources:
+    cpu: ${CPU}
+    memory: ${MEMORY}
+
+  scaling:
+    enabled: ${AUTOSCALE_ENABLED}
+    min_replicas: ${AUTOSCALE_MIN_REPLICAS}
+    max_replicas: ${AUTOSCALE_MAX_REPLICAS}
+    cpu_threshold: ${AUTOSCALE_CPU_THRESHOLD}
+
+  deployment:
+    strategy: ${DEPLOYMENT_STRATEGY}
+    max_unavailable: ${MAX_UNAVAILABLE}
+    max_surge: ${MAX_SURGE}
+
+  observability:
+    logs: ${LOG_LEVEL}
+    metrics: ${METRICS_ENABLED}
+    tracing: ${TRACING_ENABLED}
+
+  security:
+    read_only_fs: ${READ_ONLY_ROOT_FS}
+    security_context: ${SECURITY_CONTEXT_ENABLED}
+
+  env:
+    - name: SERVICE_NAME
+      value: ${SERVICE_NAME}
+      required: true
+
+  secrets:
+    - name: EXAMPLE_SECRET
+      from: ${EXAMPLE_SECRET_REF}
+      required: false

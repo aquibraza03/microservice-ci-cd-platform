@@ -1,0 +1,15 @@
+{
+  "testId": "replace-with-change-ticket",
+  "operator": "operator@example.invalid",
+  "environment": "local",
+  "targetOrigin": "http://127.0.0.1:3001",
+  "allowedOrigins": ["http://127.0.0.1:3001"],
+  "maxDurationSeconds": 120,
+  "maxRequestRate": 50,
+  "maxVirtualUsers": 20,
+  "abortErrorRate": 0.05,
+  "customerOwnedTarget": false,
+  "productionCredentials": false,
+  "externalProviderMode": "controlled_stub",
+  "cleanupPlan": "Delete synthetic organizations and stop the isolated process"
+}

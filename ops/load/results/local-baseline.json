@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "testId": "replace-with-change-ticket",
+  "operator": "operator@example.invalid",
+  "environment": "local",
+  "targetOrigin": "http://127.0.0.1:3001",
+  "environmentFingerprint": "22373b375416a29028b9686cacbb2556c85ce913eee8085d6ffa4b5cc3140994",
+  "scenario": "baseline",
+  "workloadModel": "open",
+  "tool": "node/v24.19.0",
+  "startedAt": "2026-09-20T05:03:39.683Z",
+  "durationSeconds": 10.000493726,
+  "requests": 50,
+  "throughputRps": 4.999753149187666,
+  "errorRate": 0,
+  "timeoutRate": 0,
+  "latencyMs": { "p50": 2.6669110000002547, "p95": 4.021333000000027, "p99": 14.788958000000001 },
+  "aborted": false,
+  "configuration": { "model": "open", "rate": 5, "duration": 10, "path": "/api/v1/health" },
+  "limitations": "In-memory local API health only; no PostgreSQL, Redis, workers, providers or Kubernetes. This is not production capacity evidence."
+}

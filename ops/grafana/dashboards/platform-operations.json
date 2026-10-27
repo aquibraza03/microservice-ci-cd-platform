@@ -1,0 +1,262 @@
+{
+  "uid": "platform-operations-v1",
+  "title": "Deployment Platform Operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "tags": ["platform", "slo", "phase4"],
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "User journey availability",
+      "type": "timeseries",
+      "description": "Purpose: API SLO and error-budget decision. Unit: ratio. Range: 6h. Interpret below 0.999 as budget consumption. Alerts: ApiFastErrorBudgetBurn, ApiSlowErrorBudgetBurn. Runbook: runbooks/api-slo.md",
+      "targets": [
+        {
+          "expr": "sum(rate(platform_http_requests_total{result=\"success\",route!~\".*/(health|ready)$\"}[5m])) / clamp_min(sum(rate(platform_http_requests_total{route!~\".*/(health|ready)$\"}[5m])), 0.001)",
+          "legendFormat": "availability"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Error budget remaining",
+      "type": "stat",
+      "description": "Purpose: release/incident decision. Unit: percent. Range: 30d. Interpret negative as exhausted. Alert: burn-rate alerts. Runbook: runbooks/api-slo.md",
+      "targets": [
+        {
+          "expr": "1 - ((1 - (sum(increase(platform_http_requests_total{result=\"success\"}[30d])) / clamp_min(sum(increase(platform_http_requests_total[30d])), 1))) / 0.001)",
+          "legendFormat": "remaining"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "API latency p95",
+      "type": "timeseries",
+      "description": "Purpose: identify user-visible API slowness. Unit: seconds. Range: 6h. Interpret above 1s as degraded. Alert: ApiLatencyHigh. Runbook: runbooks/api-slo.md",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(platform_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 4,
+      "title": "Queue and workers",
+      "type": "timeseries",
+      "description": "Purpose: decide whether to restore/scale workers. Unit: jobs. Range: 6h. Growing wait means throughput deficit. Alerts: WorkerFleetUnavailable, QueueBacklog, OldestJobAgeHigh. Runbook: runbooks/worker-queue.md",
+      "targets": [
+        {
+          "expr": "sum by (state) (platform_queue_depth)",
+          "legendFormat": "{{state}}"
+        },
+        {
+          "expr": "max(platform_queue_oldest_job_age_seconds)",
+          "legendFormat": "oldest seconds"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 }
+    },
+    {
+      "id": 5,
+      "title": "Deployment pipeline stages",
+      "type": "timeseries",
+      "description": "Purpose: locate slow/failing stages. Unit: seconds. Range: 6h. Compare p95 by stage/result. Alert: DeploymentFailureIncrease. Runbook: runbooks/deployment-providers.md",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(platform_deployment_stage_duration_seconds_bucket[15m])))",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 }
+    },
+    {
+      "id": 6,
+      "title": "Build capacity",
+      "type": "timeseries",
+      "description": "Purpose: decide build-worker scaling. Unit: builds. Range: 6h. Queued growth with active at limit means exhaustion. Alert: BuildCapacityExhausted. Runbook: runbooks/worker-queue.md",
+      "targets": [
+        {
+          "expr": "sum by (state) (platform_builds)",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 }
+    },
+    {
+      "id": 7,
+      "title": "Kubernetes operations",
+      "type": "timeseries",
+      "description": "Purpose: distinguish target-provider failures. Unit: seconds. Range: 6h. High failure count or latency blocks rollout. Alert: KubernetesProviderFailure. Runbook: runbooks/deployment-providers.md",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation, result) (rate(platform_provider_operation_duration_seconds_bucket{provider_type=\"kubernetes\"}[10m])))",
+          "legendFormat": "{{operation}} {{result}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 }
+    },
+    {
+      "id": 8,
+      "title": "External providers",
+      "type": "timeseries",
+      "description": "Purpose: identify Git/registry/DNS/certificate/secret dependency degradation. Unit: seconds. Range: 6h. Alerts: RegistryFailure, GitWebhookFailure. Runbook: runbooks/deployment-providers.md",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, provider_type, operation) (rate(platform_provider_operation_duration_seconds_bucket[10m])))",
+          "legendFormat": "{{provider_type}} {{operation}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 }
+    },
+    {
+      "id": 9,
+      "title": "PostgreSQL and Redis",
+      "type": "timeseries",
+      "description": "Purpose: decide data-service escalation. Unit: seconds/connections. Range: 6h. Alerts: DatabaseUnavailable, DatabasePoolExhausted, RedisFailure. Runbook: runbooks/data-services.md",
+      "targets": [
+        {
+          "expr": "sum by (state) (platform_database_pool_connections)",
+          "legendFormat": "db {{state}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(platform_redis_operation_duration_seconds_bucket[5m])))",
+          "legendFormat": "redis p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 }
+    },
+    {
+      "id": 10,
+      "title": "Live log streams",
+      "type": "timeseries",
+      "description": "Purpose: detect stale/disconnected user streams. Unit: connections/seconds. Range: 6h. Alert: LogStreamDegraded. Runbook: runbooks/live-observability.md",
+      "targets": [
+        {
+          "expr": "sum(platform_log_streams_active)",
+          "legendFormat": "active"
+        },
+        {
+          "expr": "max(platform_log_stream_freshness_seconds)",
+          "legendFormat": "freshness seconds"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 }
+    },
+    {
+      "id": 11,
+      "title": "Previews and certificates",
+      "type": "timeseries",
+      "description": "Purpose: cleanup and TLS risk decisions. Unit: resources/seconds. Range: 24h. Alerts: PreviewCleanupBacklog, CertificateExpiryRisk. Runbook: runbooks/deployment-providers.md",
+      "targets": [
+        {
+          "expr": "sum by (state) (platform_preview_cleanup_backlog)",
+          "legendFormat": "cleanup {{state}}"
+        },
+        {
+          "expr": "min(platform_certificate_expiry_seconds)",
+          "legendFormat": "minimum cert seconds"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 }
+    },
+    {
+      "id": 12,
+      "title": "Rollbacks",
+      "type": "timeseries",
+      "description": "Purpose: verify rollback success and duration. Unit: operations/seconds. Range: 24h. Alert: DeploymentFailureIncrease. Runbook: runbooks/deployment-providers.md",
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(platform_deployment_transitions_total{stage=~\"rolling_back|verifying|rolled_back\"}[15m]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 }
+    },
+    {
+      "id": 13,
+      "title": "Approvals and policies",
+      "type": "timeseries",
+      "description": "Purpose: find governance delay or denial changes. Unit: seconds/decisions. Range: 24h. Interpret prolonged waits by action and policy result changes. Related runbook: runbooks/deployment-providers.md",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, action) (rate(platform_approval_wait_duration_seconds_bucket[1h])))",
+          "legendFormat": "approval {{action}}"
+        },
+        {
+          "expr": "sum by (policy, result) (rate(platform_policy_evaluations_total[15m]))",
+          "legendFormat": "{{policy}} {{result}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 }
+    },
+    {
+      "id": 14,
+      "title": "Audit integrity",
+      "type": "stat",
+      "description": "Purpose: security escalation decision. Unit: failures. Range: 24h. Any value above zero is critical. Alert: AuditIntegrityFailure. Runbook: runbooks/audit-integrity.md",
+      "targets": [
+        {
+          "expr": "sum(increase(platform_audit_jobs_total{operation=\"integrity_verify\",result=\"failure\"}[24h]))",
+          "legendFormat": "failures"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 }
+    },
+    {
+      "id": 15,
+      "title": "Telemetry pipeline health",
+      "type": "timeseries",
+      "description": "Purpose: determine observability degradation without coupling product availability. Unit: failures/drops/ratio. Range: 6h. Alerts: TelemetryExportFailure, TelemetryDropsHigh. Runbook: runbooks/telemetry-pipeline.md",
+      "targets": [
+        {
+          "expr": "sum by (signal) (rate(platform_telemetry_dropped_total[10m]))",
+          "legendFormat": "drops {{signal}}"
+        },
+        {
+          "expr": "sum by (signal, exporter) (rate(platform_telemetry_exporter_failures_total[10m]))",
+          "legendFormat": "fail {{signal}} {{exporter}}"
+        },
+        {
+          "expr": "max by (signal, exporter) (platform_telemetry_exporter_queue_usage_ratio)",
+          "legendFormat": "queue {{signal}} {{exporter}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 }
+    },
+    {
+      "id": 16,
+      "title": "Backup, restore and DR",
+      "type": "timeseries",
+      "description": "Purpose: decide whether recovery evidence meets RPO/RTO. Unit: seconds/failures. Range: 30d. Alerts: BackupFailure, BackupAgeExcessive, RestoreTestFailure, RestoreTestAgeExcessive, DrVerificationFailure. Runbook: DISASTER_RECOVERY_RUNBOOK.md",
+      "targets": [
+        { "expr": "time() - max(platform_backup_last_success_timestamp_seconds)", "legendFormat": "backup age" },
+        { "expr": "time() - max(platform_restore_last_success_timestamp_seconds)", "legendFormat": "restore-test age" },
+        { "expr": "sum(increase(platform_dr_verification_failures_total[30d]))", "legendFormat": "DR failures" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 }
+    }
+  ]
+}

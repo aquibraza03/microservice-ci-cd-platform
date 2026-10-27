@@ -1,0 +1,310 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - "terraform/**"
+      - "environments/**"
+      - ".github/workflows/terraform-plan.yml"
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "terraform/**"
+      - "environments/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.9.7"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+
+  detect-environments:
+    name: Detect Environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build Matrix
+        id: matrix
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'matrix=["${{ github.event.inputs.environment }}"]' >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ ! -d environments ]; then
+            echo "No environments directory found"
+            exit 1
+          fi
+
+          ENVS=$(find environments -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+
+          if [ -z "$ENVS" ]; then
+            echo "No environments found"
+            exit 1
+          fi
+
+          JSON=$(printf '%s\n' "$ENVS" | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$JSON" >> $GITHUB_OUTPUT
+
+  infra-security:
+    name: Infrastructure Security (Checkov + tfsec + TFLint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: detect-environments
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.detect-environments.outputs.matrix) }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate Directory
+        id: valid
+        run: |
+          if [ -d "environments/${{ matrix.environment }}" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.valid.outputs.exists == 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Checkov Scan (fail on HIGH+)
+        if: steps.valid.outputs.exists == 'true'
+        uses: bridgecrewio/checkov-action@fcfd4ef72a8469ea29b98a1ba15dc390b1aee1db # v12.2926.0
+        with:
+          directory: environments/${{ matrix.environment }}
+          framework: terraform
+          quiet: true
+          soft_fail: false
+          download_external_modules: false
+
+      - name: tfsec Scan
+        if: steps.valid.outputs.exists == 'true'
+        shell: bash
+        run: |
+          curl -sSfL https://github.com/aquasecurity/tfsec/releases/download/v1.28.5/tfsec-linux-amd64 \
+            -o /usr/local/bin/tfsec
+          chmod +x /usr/local/bin/tfsec
+          tfsec --config-file .tfsec.yml environments/${{ matrix.environment }}
+
+      - if: steps.valid.outputs.exists == 'true'
+        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987 # v4.0.0
+
+      - name: TFLint
+        if: steps.valid.outputs.exists == 'true'
+        run: |
+          tflint --init
+          tflint --config .tflint.hcl environments/${{ matrix.environment }}
+
+  terraform-plan:
+    name: Plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: detect-environments
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.detect-environments.outputs.matrix) }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate Directory
+        id: valid
+        run: |
+          if [ -d "environments/${{ matrix.environment }}" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.valid.outputs.exists == 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        if: steps.valid.outputs.exists == 'true'
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Init (PR Safe)
+        if: steps.valid.outputs.exists == 'true' && github.event_name == 'pull_request'
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            init \
+            -backend=false
+
+      - name: Terraform Init (Remote Backend via OIDC)
+        if: steps.valid.outputs.exists == 'true' && github.event_name != 'pull_request'
+        run: |
+          if [ -f environments/${{ matrix.environment }}/backend.hcl ]; then
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              init \
+              -backend-config=backend.hcl
+          else
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              init \
+              -backend=false
+          fi
+
+      - name: Terraform Validate
+        if: steps.valid.outputs.exists == 'true'
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            validate
+
+      - name: Terraform Plan
+        if: steps.valid.outputs.exists == 'true'
+        run: |
+          if [ -f environments/${{ matrix.environment }}/terraform.tfvars ]; then
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              plan \
+              -var-file=terraform.tfvars \
+              -out=tfplan
+          else
+            terraform \
+              -chdir=environments/${{ matrix.environment }} \
+              plan \
+              -out=tfplan
+          fi
+
+      - name: Export Plan Text
+        if: steps.valid.outputs.exists == 'true'
+        run: |
+          terraform \
+            -chdir=environments/${{ matrix.environment }} \
+            show -no-color tfplan > plan.txt
+
+      - name: Upload Plan Artifact
+        if: steps.valid.outputs.exists == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: |
+            environments/${{ matrix.environment }}/tfplan
+            environments/${{ matrix.environment }}/plan.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+  summary:
+    name: Terraform Summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: always()
+    needs:
+      - infra-security
+      - terraform-plan
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: tfartifacts
+          merge-multiple: false
+
+      - name: Build Summary
+        shell: bash
+        run: |
+          echo "## Terraform Plan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Checkov: ${{ needs.infra-security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- tfsec: ${{ needs.infra-security.result }}" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d tfartifacts ]; then
+            find tfartifacts -name plan.txt | while read file; do
+              DIRNAME=$(basename "$(dirname "$file")")
+              ENV_NAME="${DIRNAME#tfplan-}"
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### ${ENV_NAME}" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -100 "$file" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+      - name: Comment PR Summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+            if (fs.existsSync(summaryPath)) {
+              const body = fs.readFileSync(summaryPath, 'utf8');
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body.slice(0, 60000)
+              });
+            }

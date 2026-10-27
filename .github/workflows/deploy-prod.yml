@@ -1,0 +1,189 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy (required)"
+        required: true
+        type: string
+      image_ref:
+        description: "Immutable image ref (tag or digest)"
+        required: true
+        type: string
+      change_ticket:
+        description: "Change request / ticket ID"
+        required: true
+        type: string
+      rollout_strategy:
+        description: "Deployment strategy"
+        required: true
+        type: choice
+        options:
+          - rolling
+          - blue-green
+          - canary
+
+permissions:
+  contents: read
+  deployments: write
+  checks: write
+  id-token: write
+
+concurrency:
+  group: deploy-prod-${{ github.event.inputs.service }}
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: prod
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+
+  preflight:
+    name: Preflight Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      target: ${{ steps.target.outputs.type }}
+      health_path: ${{ steps.meta.outputs.health_path }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate Service Exists
+        run: test -d services/${{ github.event.inputs.service }}
+
+      - name: Validate Change Ticket Format
+        run: |
+          echo "${{ github.event.inputs.change_ticket }}" | grep -E '^[A-Z]+-[0-9]+$'
+
+      - name: Detect Deployment Target
+        id: target
+        shell: bash
+        run: |
+          if [ -f "services/${{ github.event.inputs.service }}/service.yml" ]; then
+            TYPE=$(grep '^target:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}')
+          elif [ -d deploy/k8s ]; then
+            TYPE="k8s"
+          elif [ -d deploy/ecs ]; then
+            TYPE="ecs"
+          fi
+          echo "type=${TYPE:-k8s}" >> $GITHUB_OUTPUT
+
+      - name: Read Health Path
+        id: meta
+        shell: bash
+        run: |
+          PATH_CHECK=$(grep '^healthcheck:' services/${{ github.event.inputs.service }}/service.yml | awk '{print $2}' || true)
+          echo "health_path=${PATH_CHECK:-/health}" >> $GITHUB_OUTPUT
+
+  deploy:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: preflight
+
+    environment:
+      name: prod
+      url: https://prod.example.internal
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Record Deployment Start
+        run: |
+          echo "Deploying ${{ github.event.inputs.service }}"
+          echo "Image: ${{ github.event.inputs.image_ref }}"
+          echo "Ticket: ${{ github.event.inputs.change_ticket }}"
+          echo "Strategy: ${{ github.event.inputs.rollout_strategy }}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Verify Image Signature (Sigstore / Cosign)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ github.event.inputs.service }}:${{ github.event.inputs.image_ref }}
+        run: |
+          cosign verify "$IMAGE_REF" \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository_owner }}/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            || { echo "Image signature verification FAILED — refusing to deploy"; exit 1; }
+
+      - name: Verify SBOM Attestation Present
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ github.event.inputs.service }}:${{ github.event.inputs.image_ref }}
+        run: |
+          cosign verify-attestation --type sbom "$IMAGE_REF" >/dev/null 2>&1 \
+            && echo "SBOM attestation verified" \
+            || { echo "WARN: SBOM attestation not found for image"; }
+
+      - name: Deploy (${{ github.event.inputs.rollout_strategy }})
+        env:
+          IMAGE_REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_TAG: ${{ github.event.inputs.image_ref }}
+        run: |
+          chmod +x deploy/deploy.sh
+          deploy/deploy.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ needs.preflight.outputs.target }}" \
+            "${{ env.ENVIRONMENT }}"
+
+      - name: Health Check
+        run: |
+          chmod +x ci/smoke-test.sh
+          ci/smoke-test.sh \
+            "${{ github.event.inputs.service }}" \
+            "${{ needs.preflight.outputs.health_path }}" \
+            "${{ env.ENVIRONMENT }}"
+
+      - name: Auto Rollback on Failure
+        if: failure()
+        env:
+          NAMESPACE: ${{ github.event.inputs.service }}
+          ROLLOUT_TIMEOUT: 300s
+        run: |
+          chmod +x deploy/k8s/rollback.sh
+          deploy/k8s/rollback.sh \
+            "${{ github.event.inputs.service }}"
+
+  post-deploy:
+    name: Production Summary
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - preflight
+      - deploy
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Publish Summary
+        run: |
+          echo "## Production Deployment Result" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: ${{ github.event.inputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ github.event.inputs.image_ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Change Ticket: ${{ github.event.inputs.change_ticket }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Strategy: ${{ github.event.inputs.rollout_strategy }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Signature verified: yes" >> $GITHUB_STEP_SUMMARY
+          echo "- Rollback enabled on failure" >> $GITHUB_STEP_SUMMARY

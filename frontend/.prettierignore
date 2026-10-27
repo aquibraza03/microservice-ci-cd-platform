@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+e2e/
+*.tsbuildinfo
+.env.local
+.env.*.local
+.prettierignore
+package-lock.json

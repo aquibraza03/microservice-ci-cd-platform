@@ -1,0 +1,16 @@
+{
+  "name": "@saas/lib",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Environment resolution, application configuration, and logging",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@saas/types": "file:../types",
+    "@saas/utils": "file:../utils",
+    "zod": "^3.25.76"
+  }
+}

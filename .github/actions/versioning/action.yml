@@ -1,0 +1,138 @@
+name: Versioning
+description: Enterprise reusable composite action for semantic version calculation, tag discovery, prerelease support, and GitHub outputs.
+
+inputs:
+  strategy:
+    description: patch | minor | major | auto
+    required: false
+    default: auto
+
+  prefix:
+    description: Version tag prefix
+    required: false
+    default: v
+
+  prerelease:
+    description: Enable prerelease version
+    required: false
+    default: "false"
+
+  prerelease_suffix:
+    description: alpha | beta | rc
+    required: false
+    default: rc
+
+  default_version:
+    description: Used when no tags exist
+    required: false
+    default: 0.0.0
+
+outputs:
+  current_version:
+    description: Latest discovered version
+    value: ${{ steps.version.outputs.current_version }}
+
+  next_version:
+    description: Calculated next version
+    value: ${{ steps.version.outputs.next_version }}
+
+  current_tag:
+    description: Latest discovered tag
+    value: ${{ steps.version.outputs.current_tag }}
+
+  next_tag:
+    description: Calculated next tag
+    value: ${{ steps.version.outputs.next_tag }}
+
+  bump_type:
+    description: Resolved bump strategy
+    value: ${{ steps.version.outputs.bump_type }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Validate Git Repository
+      shell: bash
+      run: |
+        git rev-parse --is-inside-work-tree >/dev/null
+
+    - name: Fetch Tags
+      shell: bash
+      run: |
+        git fetch --tags --force >/dev/null 2>&1 || true
+
+    - name: Calculate Version
+      id: version
+      shell: bash
+      run: |
+        PREFIX="${{ inputs.prefix }}"
+        STRATEGY="${{ inputs.strategy }}"
+        PRERELEASE="${{ inputs.prerelease }}"
+        SUFFIX="${{ inputs.prerelease_suffix }}"
+        DEFAULT="${{ inputs.default_version }}"
+
+        LAST_TAG=$(git tag --list "${PREFIX}*" --sort=-v:refname | head -1)
+
+        if [ -z "$LAST_TAG" ]; then
+          LAST_TAG="${PREFIX}${DEFAULT}"
+        fi
+
+        CURRENT_VERSION="${LAST_TAG#$PREFIX}"
+
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+        if [ "$STRATEGY" = "auto" ]; then
+          MSG=$(git log -1 --pretty=%B)
+
+          if echo "$MSG" | grep -q "BREAKING CHANGE"; then
+            STRATEGY="major"
+          elif echo "$MSG" | grep -Eq '^feat(\(|:)' ; then
+            STRATEGY="minor"
+          else
+            STRATEGY="patch"
+          fi
+        fi
+
+        case "$STRATEGY" in
+          major)
+            MAJOR=$((MAJOR+1))
+            MINOR=0
+            PATCH=0
+            ;;
+          minor)
+            MINOR=$((MINOR+1))
+            PATCH=0
+            ;;
+          *)
+            PATCH=$((PATCH+1))
+            STRATEGY="patch"
+            ;;
+        esac
+
+        NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+        if [ "$PRERELEASE" = "true" ]; then
+          COUNT=$(git rev-list --count HEAD)
+          NEXT_VERSION="${NEXT_VERSION}-${SUFFIX}.${COUNT}"
+        fi
+
+        NEXT_TAG="${PREFIX}${NEXT_VERSION}"
+
+        {
+          echo "current_version=$CURRENT_VERSION"
+          echo "next_version=$NEXT_VERSION"
+          echo "current_tag=$LAST_TAG"
+          echo "next_tag=$NEXT_TAG"
+          echo "bump_type=$STRATEGY"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Publish Summary
+      shell: bash
+      run: |
+        echo "## Version Calculation Completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Current Tag: ${{ steps.version.outputs.current_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Current Version: ${{ steps.version.outputs.current_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Next Tag: ${{ steps.version.outputs.next_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Next Version: ${{ steps.version.outputs.next_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Bump Type: ${{ steps.version.outputs.bump_type }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,18 @@
+{
+  "dev": [
+    "develop",
+    "main",
+    "feature/*"
+  ],
+
+  "staging": [
+    "main",
+    "release/*",
+    "hotfix/*"
+  ],
+
+  "prod": [
+    "main",
+    "hotfix/*"
+  ]
+}

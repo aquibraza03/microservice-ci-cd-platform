@@ -1,0 +1,14 @@
+name: control-plane-api
+language: node
+
+docker:
+  context: .
+  port: 3000
+
+deploy:
+  type: k8s
+  healthcheck: /api/v1/health
+
+ci:
+  run_tests: true
+  run_security: true

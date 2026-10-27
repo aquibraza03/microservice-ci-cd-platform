@@ -1,0 +1,11 @@
+**
+!services/
+!services/control-plane-api/
+!services/control-plane-api/package.json
+!services/control-plane-api/package-lock.json
+!services/control-plane-api/src/**
+!services/control-plane-api/migrations/**
+!services/control-plane-api/openapi.yaml
+!scripts/
+!scripts/staging/
+!scripts/staging/smoke.cjs

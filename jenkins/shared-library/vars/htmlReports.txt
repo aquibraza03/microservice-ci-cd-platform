@@ -1,0 +1,124 @@
+htmlReports
+
+Reusable Jenkins Shared Library step for publishing HTML reports.
+
+Purpose:
+- standardize HTML report publishing across pipelines
+- reduce repeated publishHTML(...) blocks
+- expose dashboards in Jenkins UI
+- support custom report paths and names
+- keep historical reports available
+
+Typical Use Cases:
+- code coverage dashboards
+- security scan reports
+- Terraform summaries
+- performance test reports
+- custom build dashboards
+
+Basic Usage:
+
+@Library('platform-lib') _
+
+htmlReports()
+
+Custom Usage:
+
+htmlReports(
+  reportDir: 'coverage',
+  reportFiles: 'index.html',
+  reportName: 'Coverage Report'
+)
+
+Supported Parameters:
+
+reportDir
+  Directory containing report files.
+
+  Default:
+  reports
+
+reportFiles
+  Entry HTML file(s).
+
+  Default:
+  index.html
+
+Examples:
+  index.html
+  summary.html
+  index.html,details.html
+
+reportName
+  Name displayed in Jenkins UI.
+
+  Default:
+  Pipeline Report
+
+keepAll
+  true | false
+
+  Keep reports for every build.
+
+  Default:
+  true
+
+allowMissing
+  true | false
+
+  true  = do not fail if report missing
+  false = fail build if report missing
+
+  Default:
+  true
+
+alwaysLinkToLastBuild
+  true | false
+
+  Keep latest build report shortcut.
+
+  Default:
+  true
+
+Examples:
+
+Default pipeline report:
+
+htmlReports()
+
+Coverage dashboard:
+
+htmlReports(
+  reportDir: 'coverage',
+  reportFiles: 'index.html',
+  reportName: 'Coverage'
+)
+
+Security report:
+
+htmlReports(
+  reportDir: 'security-report',
+  reportFiles: 'index.html',
+  reportName: 'Security Scan'
+)
+
+Terraform summary:
+
+htmlReports(
+  reportDir: 'reports',
+  reportFiles: 'terraform.html',
+  reportName: 'Terraform Plan'
+)
+
+Best Practice:
+Use one standard report location across pipelines:
+
+- Jenkinsfile.monorepo
+- Jenkinsfile.deploy
+- Jenkinsfile.ops
+
+Recommended default:
+reports/index.html
+
+Plugin Requirement:
+HTML Publisher Plugin must be installed.

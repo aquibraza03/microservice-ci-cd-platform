@@ -1,0 +1,41 @@
+# Global fallback owners
+*                                   @aquibraza03
+
+# GitHub Governance
+.github/                            @aquibraza03
+.github/workflows/                  @aquibraza03
+.github/actions/                    @aquibraza03
+
+# Security-sensitive files
+.github/workflows/security.yml      @aquibraza03
+.github/workflows/deploy-prod.yml   @aquibraza03
+.github/workflows/rollback.yml      @aquibraza03
+.github/workflows/hotfix.yml        @aquibraza03
+
+# Infrastructure / Terraform
+terraform/                          @aquibraza03
+environments/                       @aquibraza03
+environments/prod/                  @aquibraza03
+environments/staging/               @aquibraza03
+
+# Kubernetes / Deployment
+deploy/                             @aquibraza03
+
+# Services
+services/auth-service/              @aquibraza03
+services/orders-service/            @aquibraza03
+services/payments-service/          @aquibraza03
+services/platform-smoke-test/       @aquibraza03
+services/                           @aquibraza03
+
+# CI / Test
+ci/                                 @aquibraza03
+scripts/                            @aquibraza03
+
+# Platform Configuration
+platform/                           @aquibraza03
+ops/                                @aquibraza03
+
+# Documentation
+docs/                               @aquibraza03
+*.md                                @aquibraza03

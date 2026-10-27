@@ -1,0 +1,38 @@
+{
+  "extends": "./node_modules/@saas/config/tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@saas/config": ["packages/config/src/index.ts"],
+      "@saas/types": ["packages/types/src/index.ts"],
+      "@saas/utils": ["packages/utils/src/index.ts"],
+      "@saas/lib": ["packages/lib/src/index.ts"],
+      "@saas/hooks": ["packages/hooks/src/index.ts"],
+      "@saas/services": ["packages/services/src/index.ts"],
+      "@saas/ui": ["packages/ui/src/index.ts"],
+      "@saas/intl": ["packages/intl/src/index.ts"],
+      "@saas/observability": ["packages/observability/src/index.ts"],
+      "@saas/features/auth": ["packages/features/auth/src/index.ts"],
+      "@saas/features/theme": ["packages/features/theme/src/index.ts"],
+      "@saas/features/dashboard": ["packages/features/dashboard/src/index.ts"],
+      "@saas/features/platform": ["packages/features/platform/src/index.ts"],
+      "@/*": ["apps/web/src/*"]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/dist",
+    "**/.next",
+    "**/coverage",
+    "**/e2e",
+    "**/playwright-report"
+  ]
+}

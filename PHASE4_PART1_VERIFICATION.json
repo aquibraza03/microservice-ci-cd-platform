@@ -1,0 +1,29 @@
+{
+  "phase": "4.1",
+  "generated_at": "2026-09-20T04:44:24Z",
+  "production_ready": false,
+  "slo_targets": "provisional",
+  "results": [
+    {"name":"control_plane_regression","classification":"integration-tested","status":"passed","tests":179},
+    {"name":"observability_unit_and_http","classification":"unit-and-integration-tested","status":"passed","tests":21},
+    {"name":"frontend_verify","classification":"integration-tested","status":"passed","tests":94,"lint_warnings":48},
+    {"name":"auth_fixture","classification":"unit-tested","status":"passed","tests":58},
+    {"name":"smoke_fixture","classification":"unit-tested","status":"passed","tests":8},
+    {"name":"migration_contract","classification":"structural","status":"passed"},
+    {"name":"phase3_enterprise_harness","classification":"integration-tests-with-mocks","status":"passed"},
+    {"name":"container_security_scan","classification":"not-verified","status":"blocked","blocker":"Trivy was not installed; OSV Scanner was also unavailable."},
+    {"name":"local_kubernetes_telemetry","classification":"not-verified","status":"blocked","blocker":"No disposable Kubernetes cluster and no verified collector image digest were available."},
+    {"name":"staging_live_telemetry","classification":"not-verified","status":"blocked","blocker":"No telemetry backend credentials, staging traffic, or authorized paging receiver were available."}
+  ],
+  "security": {
+    "metrics_endpoint_authorized": true,
+    "cardinality_budget_tested": true,
+    "canary_secret_redaction_tested": true,
+    "queue_context_safe": true,
+    "async_span_links_tested": true,
+    "baseline_findings": [
+      "auth-service: js-yaml high advisory",
+      "frontend: three moderate Vitest-chain advisories and one high js-yaml advisory"
+    ]
+  }
+}

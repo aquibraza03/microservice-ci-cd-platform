@@ -1,0 +1,58 @@
+# Version control
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+
+# CI/CD
+.jenkins/
+jenkins/
+.github/
+
+# Docker internals
+Dockerfile
+.dockerignore
+README*.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+target/
+.next/
+node_modules/
+coverage/
+.nyc_output/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+*.zip
+*.tar.gz
+*.exe
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Terraform state and plans
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# CI artifacts
+artifacts/
+reports/
+coverage*
+junit*
+*.sarif

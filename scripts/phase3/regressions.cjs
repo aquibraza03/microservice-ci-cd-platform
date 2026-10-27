@@ -1,0 +1,10 @@
+'use strict';
+const path=require('node:path'),e=require('./environment.cjs');
+async function main(){const s=e.load(),p=e.pool(s);try{await e.assertDatabase(s,p,s.database);}finally{await p.end();}
+ const env=e.childEnv(s,s.database),results=[],stamp=new Date().toISOString().replace(/[:.]/g,'-');
+ const excluded='real BullMQ worker processes start, stop and restart against shared durable state|actual production composition is durable and dependency loss makes readiness fail closed';
+ const jobs=[['lint',['node_modules/eslint/bin/eslint.js','src','test']],['migration-contract',['test/migration.test.js']],['unit',['node_modules/mocha/bin/mocha.js','test/unit/**/*.test.js','--reporter','spec','--timeout','5000']],['security',['node_modules/mocha/bin/mocha.js','test/security/**/*.test.js','--reporter','spec','--timeout','5000']],['phase1-postgres',['scripts/test-durability.js','test/integration/postgres-repository.real.test.js','test/integration/durable-stores.real.test.js','test/integration/part2-hardening.real.test.js','test/integration/migrations.real.test.js','--grep',excluded,'--invert']]];
+ for(const[name,args]of jobs){e.assertOwned(s);const result=e.command(process.execPath,args,{cwd:e.service,env,timeout:300000});for(const secret of Object.values(e.secrets(s)))if(JSON.stringify(result).includes(secret))throw Error('Secret detected; evidence not written');const record={name,command:`node ${args.join(' ')}`,status:result.exitCode===0?'PASS':'FAIL',...result};results.push(record);e.evidence(s,`regressions-${stamp}/${name}.json`,record);console.log(`${name}: ${record.status}`);}
+ e.evidence(s,'latest-regressions.json',{directory:`regressions-${stamp}`,results:results.map(({name,status,exitCode})=>({name,status,exitCode})),excluded,reason:'Live Redis-dependent tests excluded under Phase 3 scope; PostgreSQL failure/composition verified separately'});process.exitCode=results.some(x=>x.status!=='PASS')?1:0;
+}
+main().catch(error=>{console.error(error.message);process.exitCode=1;});

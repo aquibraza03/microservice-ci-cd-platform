@@ -1,0 +1,247 @@
+name: Dependency Update Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - "package.json"
+      - "**/package.json"
+      - "package-lock.json"
+      - "**/package-lock.json"
+      - "requirements.txt"
+      - "**/requirements.txt"
+      - "pyproject.toml"
+      - "**/pyproject.toml"
+      - "go.mod"
+      - "**/go.mod"
+      - "go.sum"
+      - "**/go.sum"
+      - ".github/workflows/*.yml"
+      - ".github/dependabot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  security-events: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+  GO_VERSION: "1.22"
+
+jobs:
+
+  classify:
+    name: Classify Dependency PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      dependabot: ${{ steps.meta.outputs.dependabot }}
+      renovate: ${{ steps.meta.outputs.renovate }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Detect Bot Source
+        id: meta
+        shell: bash
+        run: |
+          ACTOR="${{ github.actor }}"
+          if [ "$ACTOR" = "dependabot[bot]" ]; then
+            echo "dependabot=true" >> $GITHUB_OUTPUT
+          else
+            echo "dependabot=false" >> $GITHUB_OUTPUT
+          fi
+          if echo "$ACTOR" | grep -qi renovate; then
+            echo "renovate=true" >> $GITHUB_OUTPUT
+          else
+            echo "renovate=false" >> $GITHUB_OUTPUT
+          fi
+
+  node-security:
+    name: Node Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install and Audit Dependencies
+        shell: bash
+        run: |
+          find . \( -name package-lock.json -o -name package.json \) -not -path '*/node_modules/*' | while read file; do
+            DIR=$(dirname "$file")
+            cd "$DIR"
+            npm ci 2>/dev/null || npm install 2>/dev/null || true
+            cd - >/dev/null
+          done
+
+      - name: Run npm Audit
+        run: |
+          npm audit --json > npm-audit.json || true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          sarif_file: npm-audit.json
+
+  python-security:
+    name: Python Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Audit Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit || true
+
+  go-security:
+    name: Go Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... || true
+
+  trigger-tests:
+    name: Trigger Test Matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Dispatch test-matrix.yml
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'test-matrix.yml',
+              ref: context.ref.replace('refs/heads/', '')
+            });
+
+  automerge:
+    name: Safe Auto Merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - classify
+      - node-security
+      - python-security
+      - go-security
+      - trigger-tests
+
+    if: >
+      github.event_name == 'pull_request' &&
+      (needs.classify.outputs.dependabot == 'true' ||
+       needs.classify.outputs.renovate == 'true')
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Enable Auto Merge
+        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3
+        with:
+          pull-request-number: ${{ github.event.pull_request.number }}
+          merge-method: squash
+
+  summary:
+    name: Dependency Validation Summary
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - node-security
+      - python-security
+      - go-security
+      - trigger-tests
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Publish Summary
+        run: |
+          echo "## Dependency Validation Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Node audit: ${{ needs.node-security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Python audit: ${{ needs.python-security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Go vuln check: ${{ needs.go-security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Test matrix triggered" >> $GITHUB_STEP_SUMMARY

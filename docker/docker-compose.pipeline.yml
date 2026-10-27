@@ -1,0 +1,44 @@
+name: microservice-platform-pipeline
+services:
+  control-plane:
+    build: { context: ../services/control-plane-api }
+    env_file: ../services/control-plane-api/.env
+    environment:
+      CONTROL_PLANE_STORAGE: postgres
+      DATABASE_URL: postgres://platform_local:local_dev_pg_7f3c_change_me@postgres:5432/platform_control_plane
+      REDIS_URL: redis://redis:6379
+    ports: ["127.0.0.1:3001:3000"]
+    networks: [platform-local]
+  build-worker:
+    build: { context: ../services/control-plane-api, dockerfile: Dockerfile.worker }
+    env_file: ../services/control-plane-api/.env
+    environment:
+      CONTROL_PLANE_STORAGE: postgres
+      DATABASE_URL: postgres://platform_local:local_dev_pg_7f3c_change_me@postgres:5432/platform_control_plane
+      REDIS_URL: redis://redis:6379
+      BUILD_EXECUTOR_MODE: rootless-buildkit
+      REGISTRY_PROVIDER: ${REGISTRY_PROVIDER:-local}
+      LOCAL_REGISTRY_HOST: ${LOCAL_REGISTRY_HOST:-registry:5000}
+      SUPPLY_CHAIN_MODE: ${SUPPLY_CHAIN_MODE:-cli}
+      COSIGN_KEY_PATH: /run/secrets/cosign.key
+      COSIGN_PASSWORD: ${LOCAL_COSIGN_PASSWORD:-local_cosign_9c7e_change_me}
+      DEPLOYMENT_TARGET: kubernetes
+      KUBERNETES_CONTEXT: kind-platform-local
+      KUBECONFIG: /home/worker/.kube/config
+      KIND_ENDPOINT_HOST: host.docker.internal
+    ports: ["127.0.0.1:3002:3002"]
+    read_only: true
+    tmpfs: ["/tmp:size=2g,mode=1777", "/home/worker/.local/share/buildkit:size=2g,uid=1000,gid=1000"]
+    volumes:
+      - ${KUBECONFIG_PATH:-../.local/kubeconfig}:/home/worker/.kube/config:ro
+      - ${COSIGN_KEY_PATH:-../.local/cosign.key}:/run/secrets/cosign.key:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.0
+    stop_grace_period: 30s
+    networks: [platform-local]
+networks:
+  platform-local: { external: true, name: microservice-platform-local }

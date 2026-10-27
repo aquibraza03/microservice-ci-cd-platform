@@ -1,0 +1,146 @@
+slackNotify
+
+Reusable Slack notification step for Jenkins pipelines.
+
+Purpose:
+- send pipeline status notifications
+- standardize message formatting
+- include build metadata
+- support mentions and channels
+- reduce duplicated webhook logic across Jenkinsfiles
+
+Repository Alignment:
+This step is orchestration only.
+It does not replace your existing ./scripts/notify.sh unless you choose to migrate.
+
+Can Be Used With:
+- Jenkinsfile.monorepo
+- Jenkinsfile.deploy
+- Jenkinsfile.ops
+- scheduled jobs
+- release jobs
+- rollback jobs
+
+Basic Usage:
+
+@Library('platform-lib') _
+
+slackNotify(
+  status: 'success',
+  message: 'Pipeline completed'
+)
+
+Full Usage:
+
+slackNotify(
+  status: 'failure',
+  title: 'Production Deploy Failed',
+  message: 'orders-service deployment failed in prod',
+  mention: '@here',
+  channel: '#alerts',
+  username: 'Platform Bot',
+  icon: ':rotating_light:',
+  footer: 'Enterprise CI/CD'
+)
+
+Supported Parameters:
+
+status
+  Notification severity.
+
+  Values:
+  - success
+  - warning
+  - failure
+  - info
+
+  Default:
+  info
+
+title
+  Card title shown in Slack.
+
+  Default:
+  Jenkins Notification
+
+message
+  Main notification text.
+
+channel
+  Optional channel override if webhook supports it.
+
+username
+  Display bot name.
+
+  Default:
+  Jenkins
+
+icon
+  Slack emoji icon.
+
+  Default:
+  :rocket:
+
+mention
+  Optional mention.
+
+  Examples:
+  - @here
+  - @channel
+  - <!subteam^ID>
+
+footer
+  Footer text.
+
+  Default:
+  CI/CD Notification
+
+webhook
+  Optional explicit webhook URL.
+
+  If omitted:
+  uses environment variable:
+
+  SLACK_WEBHOOK_URL
+
+Examples:
+
+Success after CI:
+
+slackNotify(
+  status: 'success',
+  title: 'CI Passed',
+  message: 'All services validated'
+)
+
+Failed production deploy:
+
+slackNotify(
+  status: 'failure',
+  title: 'Deploy Failed',
+  message: 'payments-service failed in prod',
+  mention: '@here'
+)
+
+Warning for infra drift:
+
+slackNotify(
+  status: 'warning',
+  title: 'Terraform Drift Detected',
+  message: 'Review required'
+)
+
+What It Includes Automatically:
+- Job name
+- Build number
+- Branch name
+- Status
+- Link to Jenkins build
+
+Best Practice:
+Use this shared step for consistency.
+Keep one message style across all pipelines.
+
+Security Notes:
+Store webhook in Jenkins credentials or secure environment variables.
+Do not hardcode webhook URLs in Jenkinsfiles.

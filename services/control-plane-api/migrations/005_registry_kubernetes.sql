@@ -1,0 +1,15 @@
+BEGIN;
+ALTER TABLE deployments ADD COLUMN IF NOT EXISTS endpoint VARCHAR(2048);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS registry VARCHAR(255);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS repository VARCHAR(512);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS published BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS scan_status VARCHAR(32);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS scan_summary JSONB;
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS sbom_reference VARCHAR(2048);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS provenance_reference VARCHAR(2048);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS signature_status VARCHAR(32);
+ALTER TABLE deployment_images ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_deployment_images_digest ON deployment_images(digest) WHERE digest IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_deployments_rollback_target ON deployments(rollback_target_id) WHERE rollback_target_id IS NOT NULL;
+COMMIT;

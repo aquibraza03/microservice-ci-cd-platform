@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: sample, namespace: platform-sample }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: sample } }
+  template:
+    metadata: { labels: { app: sample } }
+    spec:
+      serviceAccountName: sample
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: sample
+          image: "registry:5000/sample@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 256Mi } }

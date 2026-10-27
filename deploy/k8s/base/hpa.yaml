@@ -1,0 +1,53 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ${SERVICE_NAME}
+  namespace: ${K8S_NAMESPACE}
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: ${SERVICE_NAME}
+    app.kubernetes.io/instance: ${SERVICE_NAME}
+    app.kubernetes.io/part-of: microservice-platform
+    app.kubernetes.io/component: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${SERVICE_NAME}
+
+  minReplicas: ${HPA_MIN_REPLICAS}
+  maxReplicas: ${HPA_MAX_REPLICAS}
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: ${HPA_CPU_UTILIZATION}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: ${HPA_MEM_UTILIZATION}
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Min
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60

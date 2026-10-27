@@ -1,0 +1,51 @@
+{
+  "phase": "3-part-3",
+  "productionCompletionGateMet": false,
+  "baseline": {
+    "controlPlanePassed": true,
+    "frontendTests": 94,
+    "frontendPages": 24,
+    "authServiceTests": 58,
+    "smokeServiceTests": 8
+  },
+  "final": {
+    "controlPlaneSuitesPassed": true,
+    "securityTests": 56,
+    "frontendTests": 94,
+    "frontendPages": 25,
+    "authServiceTests": 58,
+    "smokeServiceTests": 8,
+    "lintPassed": true,
+    "typecheckPassed": true,
+    "productionBuildPassed": true,
+    "migrationContractPassed": true,
+    "openapiParsed": true,
+    "secretPlaintextInApprovalSnapshots": false
+  },
+  "blocked": {
+    "postgresMigrations": "ECONNREFUSED 127.0.0.1:5432",
+    "postgresRepository": "ECONNREFUSED 127.0.0.1:5432",
+    "redisBullmq": "Redis unavailable; test timed out after 15000ms",
+    "localKubernetesAdmission": "kubectl, Kind and Kyverno CLI unavailable",
+    "liveCustomerCluster": "No customer cluster supplied"
+  },
+  "classification": {
+    "approvalStateMachine": "unit-test",
+    "canonicalSnapshotHashing": "unit-test",
+    "protectedProductionDeployment": "mocked-integration",
+    "postgresApprovalTransactions": "not-verified",
+    "kyvernoPolicy": "rendered-policy-validation",
+    "kyvernoAdmission": "not-verified",
+    "policyExceptions": "unit-test",
+    "driftDetection": "unit-test",
+    "dashboard": "locally-build-verified",
+    "liveCustomerCluster": "not-verified"
+  },
+  "knownLimitations": [
+    "Approval and exception runtime stores are in-process",
+    "Only production deployment creation is fully intercepted",
+    "Kyverno assignment reconciliation is incomplete",
+    "Policy exceptions are not automatically coupled to approval creation",
+    "Drift needs a target-specific Kubernetes inspector"
+  ]
+}

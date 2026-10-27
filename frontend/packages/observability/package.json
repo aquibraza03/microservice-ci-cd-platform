@@ -1,0 +1,11 @@
+{
+  "name": "@saas/observability",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Observability foundation: typed extension points for logging, metrics, error tracking, analytics, and tracing (no providers wired)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts"
+}

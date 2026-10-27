@@ -1,0 +1,27 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata: { name: platform-secure-deployment }
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: immutable-image
+      match: { any: [{ resources: { kinds: [Deployment] } }] }
+      validate:
+        message: Images must use an immutable sha256 digest.
+        pattern: { spec: { template: { spec: { containers: [{ image: "*@sha256:*" }] } } } }
+    - name: restricted-container
+      match: { any: [{ resources: { kinds: [Deployment] } }] }
+      validate:
+        message: Platform containers must use the restricted security profile.
+        pattern:
+          spec:
+            template:
+              spec:
+                automountServiceAccountToken: false
+                securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+                containers:
+                  - securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities: { drop: [ALL] }

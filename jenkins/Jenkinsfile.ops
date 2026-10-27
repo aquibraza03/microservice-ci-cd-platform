@@ -1,0 +1,293 @@
+@Library('platform-shared-library') _
+
+import org.platform.Notifications
+import org.platform.Governance
+import org.platform.Utils
+
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile 'jenkins/agents/k8s-pod.yaml'
+      defaultContainer 'runner'
+    }
+  }
+
+  options {
+    skipDefaultCheckout(true)
+    timestamps()
+    ansiColor('xterm')
+    disableConcurrentBuilds()
+    timeout(time: 60, unit: 'MINUTES')
+    buildDiscarder(logRotator(
+      numToKeepStr: '30',
+      artifactNumToKeepStr: '15'
+    ))
+  }
+
+  parameters {
+    choice(
+      name: 'MODE',
+      choices: ['security', 'infra', 'release', 'dependency-update'],
+      description: 'Operational workflow to run'
+    )
+    choice(
+      name: 'ENV',
+      choices: ['dev', 'staging', 'prod'],
+      description: 'Target environment'
+    )
+    booleanParam(
+      name: 'AUTO_APPROVE',
+      defaultValue: false,
+      description: 'Skip manual approval for non-prod'
+    )
+  }
+
+  environment {
+    CI = "true"
+    PLATFORM_ENV = "${params.ENV}"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Init') {
+      steps {
+        container('runner') {
+          sh '''
+            chmod +x ci/*.sh scripts/*.sh deploy/*.sh infra/*.sh release/*.sh 2>/dev/null || true
+            mkdir -p reports
+          '''
+        }
+      }
+    }
+
+    stage('Governance Checks') {
+      steps {
+        script {
+          def gov = new Governance(this)
+          gov.info("Running OPS mode: ${params.MODE} on ${params.ENV}")
+          if (params.MODE == 'infra' || params.MODE == 'release') {
+            gov.validateBranchForEnv(params.ENV)
+          }
+        }
+      }
+    }
+
+    stage('Security Mode') {
+      when {
+        expression { params.MODE == 'security' }
+      }
+      steps {
+        container('runner') {
+          sh '''
+            if [ -f ./ci/security.sh ]; then
+              ./ci/security.sh
+            else
+              echo "Missing ci/security.sh"
+              exit 1
+            fi
+          '''
+        }
+      }
+    }
+
+    stage('Dependency Update Mode') {
+      when {
+        expression { params.MODE == 'dependency-update' }
+      }
+      steps {
+        container('runner') {
+          sh '''
+            if [ -f ./ci/dependency-update.sh ]; then
+              ./ci/dependency-update.sh
+            else
+              echo "Missing ci/dependency-update.sh"
+              exit 1
+            fi
+          '''
+        }
+      }
+    }
+
+    stage('Infra Plan') {
+      when {
+        expression { params.MODE == 'infra' }
+      }
+      steps {
+        container('runner') {
+          sh """
+            if [ -f ./infra/terraform-plan.sh ]; then
+              ./infra/terraform-plan.sh ${PLATFORM_ENV}
+            elif [ -f ./terraform/plan.sh ]; then
+              ./terraform/plan.sh ${PLATFORM_ENV}
+            else
+              echo "Terraform plan script missing"
+              exit 1
+            fi
+          """
+        }
+      }
+    }
+
+    stage('Infra Approval') {
+      when {
+        allOf {
+          expression { params.MODE == 'infra' }
+          expression { params.ENV == 'prod' || !params.AUTO_APPROVE }
+        }
+      }
+      steps {
+        script {
+          def notifier = new Notifications(this)
+          notifier.approvalNeeded("Infrastructure apply required for ${params.ENV}")
+        }
+        timeout(time: 20, unit: 'MINUTES') {
+          input(
+            message: "Approve infrastructure apply for ${params.ENV}?",
+            ok: "Apply"
+          )
+        }
+      }
+    }
+
+    stage('Infra Apply') {
+      when {
+        expression { params.MODE == 'infra' }
+      }
+      steps {
+        container('runner') {
+          sh """
+            if [ -f ./infra/terraform-apply.sh ]; then
+              ./infra/terraform-apply.sh ${PLATFORM_ENV}
+            elif [ -f ./terraform/apply.sh ]; then
+              ./terraform/apply.sh ${PLATFORM_ENV}
+            fi
+          """
+        }
+      }
+    }
+
+    stage('Resolve Version') {
+      when {
+        expression { params.MODE == 'release' }
+      }
+      steps {
+        container('runner') {
+          script {
+            env.VERSION = sh(
+              script: './ci/version.sh',
+              returnStdout: true
+            ).trim()
+          }
+        }
+      }
+    }
+
+    stage('Release Approval') {
+      when {
+        allOf {
+          expression { params.MODE == 'release' }
+          expression { params.ENV == 'prod' || !params.AUTO_APPROVE }
+        }
+      }
+      steps {
+        script {
+          def notifier = new Notifications(this)
+          notifier.approvalNeeded("Release ${env.VERSION} to ${params.ENV}")
+        }
+        timeout(time: 20, unit: 'MINUTES') {
+          input(
+            message: "Approve release ${env.VERSION} to ${params.ENV}?",
+            ok: "Release"
+          )
+        }
+      }
+    }
+
+    stage('Publish Release') {
+      when {
+        expression { params.MODE == 'release' }
+      }
+      steps {
+        container('runner') {
+          sh """
+            if [ -f ./release/release.sh ]; then
+              ./release/release.sh ${env.VERSION} ${PLATFORM_ENV}
+            elif [ -f ./ci/release.sh ]; then
+              ./ci/release.sh ${env.VERSION}
+            else
+              echo "Release script missing"
+              exit 1
+            fi
+          """
+        }
+      }
+    }
+  }
+
+  post {
+
+    success {
+      script {
+        def notifier = new Notifications(this)
+        notifier.success("OPS success: ${params.MODE} (${params.ENV})")
+
+        def utils = new Utils(this)
+        utils.setDescription("${params.MODE} | ${params.ENV}")
+      }
+
+      container('runner') {
+        sh """
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh success \
+            "OPS success: ${params.MODE} (${params.ENV})"
+          fi
+        """
+      }
+    }
+
+    failure {
+      script {
+        def notifier = new Notifications(this)
+        notifier.failure("OPS failed: ${params.MODE} (${params.ENV})")
+      }
+
+      container('runner') {
+        sh """
+          if [ -f ./scripts/notify.sh ]; then
+            ./scripts/notify.sh failure \
+            "OPS failed: ${params.MODE} (${params.ENV})"
+          fi
+        """
+      }
+    }
+
+    always {
+      junit(
+        allowEmptyResults: true,
+        testResults: '**/test-results.xml'
+      )
+
+      htmlReports(
+        reportDir: 'reports',
+        reportFiles: 'index.html',
+        reportName: 'Pipeline Report'
+      )
+
+      archiveArtifacts(
+        artifacts: '**/plan.json, **/*.tfplan, reports/**',
+        allowEmptyArchive: true
+      )
+
+      script {
+        currentBuild.description =
+          "${params.MODE} | ${params.ENV}"
+      }
+    }
+  }
+}

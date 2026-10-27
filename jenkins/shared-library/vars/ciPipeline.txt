@@ -1,0 +1,24 @@
+ciPipeline
+
+Reusable monorepo CI pipeline for services.
+
+Features:
+- checkout
+- detect changed services
+- parallel build/test/security
+- docker build
+- smoke tests
+- junit reports
+- notifications
+
+Usage:
+
+@Library('platform-lib') _
+
+ciPipeline()
+
+ciPipeline(
+  container: 'runner',
+  failFast: true,
+  smokeTest: true
+)

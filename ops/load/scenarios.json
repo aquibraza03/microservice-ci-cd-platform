@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "dataset": "phase4-capacity-v1",
+  "scenarios": [
+    {"name":"authentication_authorization","model":"open","operation":"GET /api/v1/me"},
+    {"name":"project_service_listing","model":"open","operation":"GET organization projects"},
+    {"name":"deployment_creation","model":"open","operation":"POST deployment with unique idempotency key"},
+    {"name":"deployment_status","model":"open","operation":"GET deployment"},
+    {"name":"live_log_streams","model":"closed","operation":"SSE reconnect and replay"},
+    {"name":"queue_production_consumption","model":"open","operation":"synthetic deployment queue"},
+    {"name":"webhook_burst","model":"open","operation":"signed synthetic duplicate-safe webhooks"},
+    {"name":"preview_creation_cleanup","model":"open","operation":"synthetic PR preview lifecycle"},
+    {"name":"rollback_requests","model":"open","operation":"eligible synthetic rollback"},
+    {"name":"approval_inbox","model":"open","operation":"GET pending approvals"},
+    {"name":"audit_search","model":"open","operation":"bounded paginated audit search"},
+    {"name":"provider_simulation","model":"open","operation":"controlled provider doubles only"},
+    {"name":"queue_worker_saturation","model":"open","operation":"arrival rate above worker service rate"},
+    {"name":"connection_saturation","model":"closed","operation":"bounded concurrent SSE"},
+    {"name":"noisy_neighbour_recovery","model":"open","operation":"one synthetic tenant burst then drain"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "environments": ["prod"],
+  "timeoutMinutes": 20,
+  "message": "Approve production deployment?",
+  "okLabel": "Approve",
+
+  "dualApprovalServices": [
+    "payments-service",
+    "auth-service"
+  ],
+
+  "allowHotfixBypass": false,
+
+  "notifyBeforeApproval": true
+}

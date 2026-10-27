@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-09-23T04:19:40.120Z",
+  "syntheticDataOnly": true,
+  "classification": "unit-and-local-process",
+  "checks": {
+    "twoOrganizationsDifferentPlans": true,
+    "usageRecorded": true,
+    "replayDeduplicated": true,
+    "reconciliationMatched": true,
+    "hardLimitDenied": true,
+    "cleanupAvailable": true,
+    "rollbackAvailable": true,
+    "reservationRecovered": true,
+    "crossTenantUsageEmpty": true,
+    "administrativeAuditPresent": true
+  },
+  "blocked": {
+    "localKubernetesGoldenPath": "No disposable Kubernetes runtime was available during this run.",
+    "cleanRoomRestore": "Docker, PostgreSQL server, pg_dump and pg_restore were unavailable; inherited Phase 4 Part 2 blocker.",
+    "restoredLedgerAndAuditVerification": "Depends on a successful clean-room restore.",
+    "livePagingAndProviders": "No authorized staging credentials or paging destination were supplied."
+  },
+  "passed": false
+}

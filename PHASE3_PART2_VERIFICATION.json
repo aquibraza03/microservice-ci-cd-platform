@@ -1,0 +1,50 @@
+{
+  "phase": "3-part-2",
+  "productionCompletionGateMet": false,
+  "baseline": {
+    "controlPlanePassed": true,
+    "frontendTests": 94,
+    "frontendPages": 23,
+    "existingFailures": [
+      "Control-plane development dependencies have inherited npm audit advisories in the Mocha dependency chain and js-yaml"
+    ]
+  },
+  "final": {
+    "controlPlaneSuitesPassed": true,
+    "securityTests": 40,
+    "frontendTests": 94,
+    "frontendPages": 24,
+    "authServiceTests": 58,
+    "smokeServiceTests": 8,
+    "lintPassed": true,
+    "typecheckPassed": true,
+    "productionBuildPassed": true,
+    "migrationContractPassed": true,
+    "openapiParsed": true,
+    "canaryLeakageDetected": false
+  },
+  "dependencyAudit": {
+    "passed": false,
+    "vulnerabilities": 4,
+    "highSeverity": 2,
+    "scope": "development dependency tree",
+    "remediation": "Requires a separately regression-tested dependency upgrade; npm proposes a breaking Mocha update for the full fix"
+  },
+  "blocked": {
+    "postgresMigrations": "ECONNREFUSED 127.0.0.1:5432",
+    "postgresRepository": "ECONNREFUSED 127.0.0.1:5432",
+    "redisBullmq": "Redis unavailable; test timed out after 15000ms",
+    "liveAwsSecretsManager": "No live AWS role or secret supplied",
+    "liveExternalSecrets": "No ESO-enabled Kubernetes cluster supplied"
+  },
+  "classification": {
+    "authorizationDecisionPoint": "unit-tested",
+    "postgresMembershipSafety": "structurally-implemented-not-runtime-verified",
+    "managedSecretReferences": "unit-tested",
+    "runtimeExternalSecretRendering": "unit-tested",
+    "managedSecretPostgresPersistence": "partially-implemented",
+    "workerRuntimeSecretDelivery": "partially-implemented",
+    "dashboard": "locally-build-verified",
+    "liveInfrastructure": "not-verified"
+  }
+}

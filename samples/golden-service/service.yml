@@ -1,0 +1,15 @@
+name: golden-service
+port: 3000
+dockerfile: Dockerfile
+context: .
+health:
+  startup: /health
+  readiness: /ready
+  liveness: /health
+commands:
+  test:
+    - ["npm", "test"]
+  security: []
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 256Mi }

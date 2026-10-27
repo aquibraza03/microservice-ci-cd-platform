@@ -1,0 +1,17 @@
+{
+  "phase": "4.2",
+  "generated_at": "2026-09-20T05:06:00Z",
+  "complete": false,
+  "production_ready": false,
+  "completion_blocker": "No isolated PostgreSQL runtime, pg_dump, or pg_restore; clean-room restoration was not executed.",
+  "capacity": {"classification":"local-integration","scenario":"local health baseline","rate_rps":5,"requests":50,"errors":0,"timeouts":0,"p50_ms":2.67,"p95_ms":4.02,"p99_ms":14.79,"production_claim":false},
+  "results": [
+    {"name":"control_plane_regression","classification":"integration-tested","status":"passed","tests":189},
+    {"name":"target_safety","classification":"unit-tested","status":"passed"},
+    {"name":"failure_harness_safety","classification":"unit-tested","status":"passed"},
+    {"name":"backup_encryption_and_interruption","classification":"unit-tested","status":"passed"},
+    {"name":"clean_room_restore","classification":"not-verified","status":"blocked"},
+    {"name":"local_kubernetes_failures","classification":"not-verified","status":"blocked"},
+    {"name":"staging_capacity","classification":"not-verified","status":"blocked"}
+  ]
+}

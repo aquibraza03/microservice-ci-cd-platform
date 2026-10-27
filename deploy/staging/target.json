@@ -1,0 +1,25 @@
+{
+  "environment": "staging",
+  "environmentId": "phase2-local",
+  "provider": "docker-desktop-kind",
+  "account": "local-phase2",
+  "cluster": "phase2-staging",
+  "context": "kind-phase2-staging",
+  "namespace": "phase2-staging",
+  "network": "phase2-staging",
+  "database": "phase2_staging",
+  "bucket": "phase2-staging",
+  "registryRepository": "phase2-staging/smoke",
+  "dnsZone": "localhost",
+  "hostname": "localhost",
+  "hostPort": 31082,
+  "infrastructureVersion": "1",
+  "configurationVersion": "1",
+  "images": {
+    "node": "kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5",
+    "postgres": "postgres:16.4-alpine",
+    "redis": "redis:7.4.1-alpine",
+    "objectStorage": "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+    "registry": "registry:2.8.3"
+  }
+}

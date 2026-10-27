@@ -1,0 +1,373 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-slo-alerts
+  labels: { app.kubernetes.io/part-of: deployment-platform }
+spec:
+  groups:
+    - name: platform.slo
+      interval: 30s
+      rules:
+        - alert: ApiFastErrorBudgetBurn
+          expr: '(1 - sum(rate(platform_http_requests_total{result="success",route!~".*/(health|ready)$"}[5m])) / clamp_min(sum(rate(platform_http_requests_total{route!~".*/(health|ready)$"}[5m])), 0.001)) > 14.4 * 0.001'
+          for: 2m
+          labels:
+            {
+              severity: critical,
+              owner: platform-sre,
+              notification: pager-test,
+            }
+          annotations:
+            {
+              impact: "Authenticated API users see elevated failures",
+              dashboard: "platform-slos",
+              runbook: "runbooks/api-slo.md",
+              missing_data: "not firing; paired telemetry alert covers absence",
+              resolution: "5m and 1h burn rates return below threshold",
+            }
+        - alert: ApiSlowErrorBudgetBurn
+          expr: '(1 - sum(rate(platform_http_requests_total{result="success",route!~".*/(health|ready)$"}[1h])) / clamp_min(sum(rate(platform_http_requests_total{route!~".*/(health|ready)$"}[1h])), 0.001)) > 6 * 0.001'
+          for: 15m
+          labels:
+            { severity: high, owner: platform-sre, notification: pager-test }
+          annotations:
+            {
+              impact: "API reliability budget is being consumed",
+              dashboard: "platform-slos",
+              runbook: "runbooks/api-slo.md",
+              missing_data: "not firing; paired telemetry alert covers absence",
+              resolution: "1h and 6h burn rates recover",
+            }
+        - alert: ApiAvailabilityDegraded
+          expr: 'sum(rate(platform_http_requests_total{result="platform_error"}[5m])) / clamp_min(sum(rate(platform_http_requests_total[5m])), 0.001) > 0.01'
+          for: 5m
+          labels:
+            { severity: high, owner: control-plane, notification: pager-test }
+          annotations:
+            {
+              impact: "API operations fail",
+              dashboard: "api-health",
+              runbook: "runbooks/api-slo.md",
+              missing_data: "unknown; do not resolve automatically",
+              resolution: "error ratio below 1% for 15m",
+            }
+        - alert: ApiLatencyHigh
+          expr: "histogram_quantile(0.95, sum by (le) (rate(platform_http_request_duration_seconds_bucket[5m]))) > 1"
+          for: 10m
+          labels:
+            { severity: high, owner: control-plane, notification: pager-test }
+          annotations:
+            {
+              impact: "Interactive API operations are slow",
+              dashboard: "api-health",
+              runbook: "runbooks/api-slo.md",
+              missing_data: "unknown",
+              resolution: "p95 below 1s for 15m",
+            }
+        - alert: WorkerFleetUnavailable
+          expr: 'max(platform_worker_available{worker_type="deployment"}) < 1 or absent(platform_worker_available{worker_type="deployment"})'
+          for: 2m
+          labels:
+            {
+              severity: critical,
+              owner: platform-sre,
+              notification: pager-test,
+            }
+          annotations:
+            {
+              impact: "Deployments cannot progress",
+              dashboard: "queue-workers",
+              runbook: "runbooks/worker-queue.md",
+              missing_data: "firing",
+              resolution: "worker heartbeat and successful job observed",
+            }
+        - alert: QueueBacklog
+          expr: 'sum(platform_queue_depth{state=~"wait|delayed"}) > 100'
+          for: 10m
+          labels:
+            { severity: high, owner: platform-sre, notification: pager-test }
+          annotations:
+            {
+              impact: "Deployments wait excessively",
+              dashboard: "queue-workers",
+              runbook: "runbooks/worker-queue.md",
+              missing_data: "unknown",
+              resolution: "backlog below 50 and draining",
+            }
+        - alert: OldestJobAgeHigh
+          expr: "max(platform_queue_oldest_job_age_seconds) > 600"
+          for: 5m
+          labels:
+            { severity: high, owner: platform-sre, notification: pager-test }
+          annotations:
+            {
+              impact: "At least one deployment is delayed",
+              dashboard: "queue-workers",
+              runbook: "runbooks/worker-queue.md",
+              missing_data: "unknown",
+              resolution: "oldest job below 300s",
+            }
+        - alert: DeploymentFailureIncrease
+          expr: 'sum(rate(platform_deployment_transitions_total{result="failure"}[15m])) / clamp_min(sum(rate(platform_deployment_transitions_total[15m])), 0.001) > 0.10'
+          for: 10m
+          labels:
+            { severity: high, owner: deployments, notification: pager-test }
+          annotations:
+            {
+              impact: "User deployments fail",
+              dashboard: "deployment-pipeline",
+              runbook: "runbooks/deployment-providers.md",
+              missing_data: "unknown",
+              resolution: "failure ratio below 5%",
+            }
+        - alert: BuildCapacityExhausted
+          expr: 'sum(platform_builds{state="queued"}) > 20 and sum(platform_builds{state="active"}) >= 8'
+          for: 10m
+          labels:
+            { severity: high, owner: build-platform, notification: pager-test }
+          annotations:
+            {
+              impact: "Build start is delayed",
+              dashboard: "build-system",
+              runbook: "runbooks/worker-queue.md",
+              missing_data: "unknown",
+              resolution: "queued builds below 10",
+            }
+        - alert: DatabaseUnavailable
+          expr: "absent(platform_database_pool_connections)"
+          for: 2m
+          labels:
+            { severity: critical, owner: database, notification: pager-test }
+          annotations:
+            {
+              impact: "Authoritative state operations may fail",
+              dashboard: "dependencies",
+              runbook: "runbooks/data-services.md",
+              missing_data: "firing",
+              resolution: "pool and successful DB operations restored",
+            }
+        - alert: DatabasePoolExhausted
+          expr: 'platform_database_pool_connections{state="idle"} == 0 and platform_database_pool_connections{state="waiting"} > 0'
+          for: 5m
+          labels: { severity: high, owner: database, notification: pager-test }
+          annotations:
+            {
+              impact: "API and worker DB calls queue",
+              dashboard: "dependencies",
+              runbook: "runbooks/data-services.md",
+              missing_data: "unknown",
+              resolution: "idle capacity restored",
+            }
+        - alert: RedisFailure
+          expr: 'sum(rate(platform_redis_operation_duration_seconds_count{result="failure"}[5m])) > 0.1'
+          for: 5m
+          labels:
+            { severity: high, owner: platform-sre, notification: pager-test }
+          annotations:
+            {
+              impact: "Queue operations fail",
+              dashboard: "dependencies",
+              runbook: "runbooks/data-services.md",
+              missing_data: "unknown",
+              resolution: "Redis errors cease and queue recovers",
+            }
+    - name: platform.dependencies
+      interval: 30s
+      rules:
+        - alert: RegistryFailure
+          expr: 'sum(rate(platform_provider_operation_duration_seconds_count{provider_type="registry",result="failure"}[10m])) > 0.05'
+          for: 10m
+          labels:
+            { severity: high, owner: deployments, notification: pager-test }
+          annotations:
+            {
+              impact: "Images cannot be published",
+              dashboard: "external-providers",
+              runbook: "runbooks/deployment-providers.md",
+              missing_data: "unknown",
+              resolution: "successful pushes resume",
+            }
+        - alert: KubernetesProviderFailure
+          expr: 'sum(rate(platform_provider_operation_duration_seconds_count{provider_type="kubernetes",result="failure"}[10m])) > 0.05'
+          for: 10m
+          labels:
+            { severity: high, owner: deployments, notification: pager-test }
+          annotations:
+            {
+              impact: "Rollouts cannot complete",
+              dashboard: "kubernetes-operations",
+              runbook: "runbooks/deployment-providers.md",
+              missing_data: "unknown",
+              resolution: "apply and rollout operations succeed",
+            }
+        - alert: GitWebhookFailure
+          expr: 'sum(rate(platform_provider_operation_duration_seconds_count{provider_type="github",operation="webhook",result="failure"}[10m])) > 0.05'
+          for: 10m
+          labels:
+            { severity: high, owner: integrations, notification: pager-test }
+          annotations:
+            {
+              impact: "Repository events may not trigger deployments",
+              dashboard: "external-providers",
+              runbook: "runbooks/deployment-providers.md",
+              missing_data: "unknown",
+              resolution: "verified deliveries succeed",
+            }
+        - alert: LogStreamDegraded
+          expr: 'sum(rate(platform_log_stream_disconnects_total{reason!="completed"}[10m])) > 0.5 or max(platform_log_stream_freshness_seconds) > 30'
+          for: 10m
+          labels:
+            { severity: high, owner: control-plane, notification: pager-test }
+          annotations:
+            {
+              impact: "Users see delayed or disconnected live logs",
+              dashboard: "streaming-logs",
+              runbook: "runbooks/live-observability.md",
+              missing_data: "unknown",
+              resolution: "freshness below 10s and disconnect rate normal",
+            }
+        - alert: PreviewCleanupBacklog
+          expr: 'sum(platform_preview_cleanup_backlog{state="pending"}) > 50'
+          for: 30m
+          labels:
+            { severity: warning, owner: previews, notification: ticket-test }
+          annotations:
+            {
+              impact: "Expired resources persist",
+              dashboard: "previews",
+              runbook: "runbooks/deployment-providers.md",
+              missing_data: "unknown",
+              resolution: "backlog below 10",
+            }
+        - alert: CertificateExpiryRisk
+          expr: "min(platform_certificate_expiry_seconds) < 604800"
+          for: 1h
+          labels:
+            { severity: high, owner: networking, notification: pager-test }
+          annotations:
+            {
+              impact: "A platform route may lose trusted TLS",
+              dashboard: "previews",
+              runbook: "runbooks/deployment-providers.md",
+              missing_data: "unknown",
+              resolution: "all certificates exceed 14 days",
+            }
+        - alert: AuditIntegrityFailure
+          expr: 'increase(platform_audit_jobs_total{operation="integrity_verify",result="failure"}[5m]) > 0'
+          for: 0m
+          labels:
+            { severity: critical, owner: security, notification: security-test }
+          annotations:
+            {
+              impact: "Audit evidence may have been altered",
+              dashboard: "security-governance",
+              runbook: "runbooks/audit-integrity.md",
+              missing_data: "scheduled verification absence is a separate check",
+              resolution: "incident-owned investigation and trusted checkpoint verification",
+            }
+        - alert: TelemetryExportFailure
+          expr: "increase(platform_telemetry_exporter_failures_total[10m]) > 10"
+          for: 10m
+          labels:
+            { severity: high, owner: observability, notification: pager-test }
+          annotations:
+            {
+              impact: "Operational visibility is incomplete; platform remains available",
+              dashboard: "telemetry-pipeline",
+              runbook: "runbooks/telemetry-pipeline.md",
+              missing_data: "firing if collector self-metrics absent via companion rule",
+              resolution: "exports succeed for 15m",
+            }
+        - alert: TelemetryDropsHigh
+          expr: "sum(rate(platform_telemetry_dropped_total[10m])) > 1"
+          for: 10m
+          labels:
+            { severity: high, owner: observability, notification: pager-test }
+          annotations:
+            {
+              impact: "Metrics, traces or logs are being discarded",
+              dashboard: "telemetry-pipeline",
+              runbook: "runbooks/telemetry-pipeline.md",
+              missing_data: "unknown",
+              resolution: "drops return to zero",
+            }
+        - alert: BackupFailure
+          expr: 'increase(platform_backup_jobs_total{result="failure"}[30m]) > 0'
+          for: 0m
+          labels: { severity: high, owner: data-platform, notification: pager-test }
+          annotations: { impact: "Recovery point is no longer advancing", dashboard: "backup-dr", runbook: "runbooks/backup-restore.md", missing_data: "paired backup-age alert fires", resolution: "a complete encrypted backup succeeds" }
+        - alert: BackupAgeExcessive
+          expr: 'time() - max(platform_backup_last_success_timestamp_seconds) > 86400'
+          for: 15m
+          labels: { severity: high, owner: data-platform, notification: pager-test }
+          annotations: { impact: "Potential data loss exceeds the target RPO", dashboard: "backup-dr", runbook: "runbooks/backup-restore.md", missing_data: "firing via absent companion in production rules", resolution: "backup age is below 24 hours" }
+        - alert: PitrVerificationFailure
+          expr: 'max(platform_pitr_verification_timestamp_seconds{result="failure"}) > 0'
+          for: 0m
+          labels: { severity: high, owner: data-platform, notification: pager-test }
+          annotations: { impact: "Point-in-time recovery cannot be trusted", dashboard: "backup-dr", runbook: "runbooks/database-restore.md", missing_data: "unknown until scheduled verification exists", resolution: "PITR verification passes" }
+        - alert: RestoreTestFailure
+          expr: 'increase(platform_restore_tests_total{result="failure"}[24h]) > 0'
+          for: 0m
+          labels: { severity: critical, owner: reliability, notification: pager-test }
+          annotations: { impact: "Backups may not be recoverable", dashboard: "backup-dr", runbook: "runbooks/database-restore.md", missing_data: "restore-age alert covers missing tests", resolution: "clean-room restore passes" }
+        - alert: RestoreTestAgeExcessive
+          expr: 'time() - max(platform_restore_last_success_timestamp_seconds) > 604800'
+          for: 1h
+          labels: { severity: high, owner: reliability, notification: pager-test }
+          annotations: { impact: "Recovery evidence is stale", dashboard: "backup-dr", runbook: "runbooks/database-restore.md", missing_data: "firing via absent companion in production rules", resolution: "successful restore is newer than seven days" }
+        - alert: DeadLetterGrowth
+          expr: 'sum(increase(platform_dead_letter_jobs_total[15m])) > 5'
+          for: 5m
+          labels: { severity: high, owner: platform-sre, notification: pager-test }
+          annotations: { impact: "Deployment work needs manual recovery", dashboard: "queue-workers", runbook: "runbooks/worker-queue.md", missing_data: "unknown", resolution: "DLQ growth stops and items are reconciled" }
+        - alert: ReconciliationFailure
+          expr: 'sum(increase(platform_reconciliation_failures_total[15m])) > 0'
+          for: 5m
+          labels: { severity: high, owner: platform-sre, notification: pager-test }
+          annotations: { impact: "Durable and observed state may diverge", dashboard: "backup-dr", runbook: "runbooks/reconciliation.md", missing_data: "unknown", resolution: "reconciliation succeeds" }
+        - alert: CapacitySaturation
+          expr: 'sum(increase(platform_capacity_saturation_total[10m])) > 0'
+          for: 5m
+          labels: { severity: warning, owner: platform-sre, notification: ticket-test }
+          annotations: { impact: "Latency or backlog safety margin is exhausted", dashboard: "capacity", runbook: "runbooks/capacity-saturation.md", missing_data: "unknown", resolution: "load returns below recommended limit" }
+        - alert: FailureTestSafetyAbort
+          expr: 'sum(increase(platform_failure_test_aborts_total[5m])) > 0'
+          for: 0m
+          labels: { severity: high, owner: reliability, notification: pager-test }
+          annotations: { impact: "A controlled experiment crossed its safety boundary", dashboard: "backup-dr", runbook: "runbooks/failure-test-safety.md", missing_data: "not applicable outside experiments", resolution: "experiment stopped and recovery verified" }
+        - alert: DrVerificationFailure
+          expr: 'sum(increase(platform_dr_verification_failures_total[24h])) > 0'
+          for: 0m
+          labels: { severity: critical, owner: reliability, notification: pager-test }
+          annotations: { impact: "Documented disaster recovery path failed", dashboard: "backup-dr", runbook: "DISASTER_RECOVERY_RUNBOOK.md", missing_data: "DR test age is tracked separately", resolution: "rehearsal passes with evidence" }
+        - alert: MeteringPipelineStalled
+          expr: 'sum(rate(platform_usage_ingestion_total[15m])) == 0 and sum(platform_jobs_total{worker_type="usage",result="queued"}) > 0'
+          for: 15m
+          labels: { severity: high, owner: finops-platform, notification: pager-test }
+          annotations: { impact: "Current usage is delayed and quota views may be stale", dashboard: "billing-operations", runbook: "runbooks/metering-failure.md", missing_data: "firing when queued work exists without ingestion", resolution: "usage events process and lag returns below five minutes" }
+        - alert: UsageProcessingLagHigh
+          expr: 'max(platform_usage_processing_lag_seconds) > 900'
+          for: 15m
+          labels: { severity: high, owner: finops-platform, notification: pager-test }
+          annotations: { impact: "Usage and warning thresholds are stale", dashboard: "billing-operations", runbook: "runbooks/metering-failure.md", missing_data: "unknown when no billable events are expected", resolution: "lag remains below five minutes" }
+        - alert: UsageReconciliationMismatch
+          expr: 'sum(abs(platform_usage_reconciliation_difference{status="mismatch"})) > 0'
+          for: 30m
+          labels: { severity: high, owner: finops-platform, notification: pager-test }
+          annotations: { impact: "Recorded usage differs from durable source records", dashboard: "billing-operations", runbook: "runbooks/billing-discrepancy.md", missing_data: "unknown until reconciliation runs", resolution: "difference is explained or corrected with linked adjustments" }
+        - alert: QuotaReservationLeak
+          expr: 'sum(platform_quota_reservation_leaks) > 0'
+          for: 10m
+          labels: { severity: high, owner: platform-sre, notification: pager-test }
+          annotations: { impact: "New work may be denied despite available capacity", dashboard: "billing-operations", runbook: "runbooks/reservation-leak.md", missing_data: "unknown if reconciliation is not scheduled", resolution: "orphan reservations are released and reconciliation passes" }
+        - alert: UsageDuplicateRateAbnormal
+          expr: 'sum(rate(platform_usage_duplicates_total[15m])) / clamp_min(sum(rate(platform_usage_ingestion_total[15m])), 1) > 0.2'
+          for: 20m
+          labels: { severity: warning, owner: finops-platform, notification: ticket-test }
+          annotations: { impact: "Upstream delivery is unstable; accounting remains deduplicated", dashboard: "billing-operations", runbook: "runbooks/metering-failure.md", missing_data: "not firing with no events", resolution: "duplicate ratio remains below five percent" }
+        - alert: BillingPeriodCloseFailure
+          expr: 'increase(platform_billing_period_closes_total{result="failure"}[1h]) > 0'
+          for: 0m
+          labels: { severity: high, owner: finops-platform, notification: pager-test }
+          annotations: { impact: "Period usage cannot be finalized", dashboard: "billing-operations", runbook: "runbooks/billing-discrepancy.md", missing_data: "scheduled close absence requires an external schedule check", resolution: "reconciliation succeeds and the period closes exactly once" }

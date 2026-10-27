@@ -1,0 +1,14 @@
+{
+  "global": [
+    "payments-service",
+    "auth-service",
+    "identity-service"
+  ],
+  "prod": [
+    "orders-service",
+    "inventory-service",
+    "gateway-service"
+  ],
+  "staging": [],
+  "dev": []
+}

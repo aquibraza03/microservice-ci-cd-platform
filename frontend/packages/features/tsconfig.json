@@ -1,0 +1,11 @@
+{
+  "extends": "@saas/config/tsconfig.base.json",
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "auth/src/**/*.ts",
+    "auth/src/**/*.tsx",
+    "theme/src/**/*.ts",
+    "theme/src/**/*.tsx"
+  ]
+}

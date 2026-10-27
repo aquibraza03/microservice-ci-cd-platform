@@ -1,0 +1,540 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+      - feature/**
+      - hotfix/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+  GO_VERSION: "1.22"
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+
+  frontend-security-and-quality:
+    name: Frontend Security and Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Reject high or critical production vulnerabilities
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify frontend
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+
+  detect-services:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build Matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED=$(find services -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+          else
+            CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep '^services/' | cut -d/ -f2 | sort -u || true)
+          fi
+
+          if [ -z "$CHANGED" ]; then
+            CHANGED=$(find services -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+          fi
+
+          [ -z "$CHANGED" ] && CHANGED="platform-smoke-test"
+
+          JSON=$(printf '%s\n' "$CHANGED" | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$JSON" >> $GITHUB_OUTPUT
+
+  shell-lint:
+    name: Shell Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        env:
+          SHELLCHECK_OPTS: -e SC1091
+
+  hadolint:
+    name: Dockerfile Lint (Hadolint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: services/auth-service/Dockerfile
+          config: .hadolint.yml
+
+      - name: Lint Control Plane Dockerfile
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: services/control-plane-api/Dockerfile
+          config: .hadolint.yml
+
+      - name: Lint Rootless Worker Dockerfile
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: services/control-plane-api/Dockerfile.worker
+          config: .hadolint.yml
+
+      - name: Lint Template Dockerfiles
+        shell: bash
+        run: |
+          curl -sSfL https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64 \
+            -o /usr/local/bin/hadolint
+          chmod +x /usr/local/bin/hadolint
+          for df in templates/*/Dockerfile; do
+            hadolint --config .hadolint.yml "$df"
+          done
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4.8.3
+        with:
+          fail-on-severity: high
+          license-check: true
+
+  service-tests:
+    name: Test ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: detect-services
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Dependencies
+        id: deps
+        uses: ./.github/actions/setup-deps
+        with:
+          service: ${{ matrix.service }}
+
+      - name: Install Node Dependencies
+        if: steps.deps.outputs.type == 'node'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --package-lock=false
+          fi
+
+      - name: Install Python Dependencies
+        if: steps.deps.outputs.type == 'python'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov
+
+      - name: Run Node Tests
+        if: steps.deps.outputs.type == 'node'
+        working-directory: services/${{ matrix.service }}
+        run: npm test -- --coverage
+
+      - name: Run Python Tests
+        if: steps.deps.outputs.type == 'python'
+        working-directory: services/${{ matrix.service }}
+        run: pytest --cov=. --cov-report=xml --junitxml=junit.xml
+
+      - name: Run Go Tests
+        if: steps.deps.outputs.type == 'go'
+        working-directory: services/${{ matrix.service }}
+        run: go test ./... -coverprofile=coverage.out -json > junit.json 2>&1
+
+      - name: Upload Coverage Artifact
+        if: hashFiles(format('services/{0}/coverage*', matrix.service), format('services/{0}/coverage.out', matrix.service)) != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-${{ matrix.service }}
+          path: |
+            services/${{ matrix.service }}/coverage*
+            services/${{ matrix.service }}/coverage.out
+            services/${{ matrix.service }}/junit*
+          retention-days: 14
+
+      - name: Upload Coverage to Codecov
+        if: hashFiles(format('services/{0}/coverage*', matrix.service), format('services/{0}/coverage.out', matrix.service)) != ''
+        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
+        with:
+          fail_ci_if_error: false
+          verbose: true
+
+  control-plane-foundation:
+    name: Control Plane Foundation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: control_plane
+          POSTGRES_PASSWORD: ci_only_pg_7f3c
+          POSTGRES_DB: control_plane_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U control_plane -d control_plane_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.1-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://control_plane:ci_only_pg_7f3c@localhost:5432/control_plane_test
+      POSTGRES_ADMIN_URL: postgres://control_plane:ci_only_pg_7f3c@localhost:5432/postgres
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/control-plane-api/package-lock.json
+
+      - name: Install dependencies
+        working-directory: services/control-plane-api
+        run: npm ci
+
+      - name: Reject high or critical production vulnerabilities
+        working-directory: services/control-plane-api
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
+        working-directory: services/control-plane-api
+        run: npm run lint
+
+      - name: Wait for PostgreSQL readiness
+        env:
+          PGPASSWORD: ci_only_pg_7f3c
+        run: |
+          for attempt in {1..30}; do
+            pg_isready -h 127.0.0.1 -U control_plane -d control_plane_test && exit 0
+            sleep 1
+          done
+          exit 1
+
+      - name: Apply migrations to test database
+        working-directory: services/control-plane-api
+        run: npm run migrate
+
+      - name: Test GitHub App onboarding security with mocked provider responses
+        working-directory: services/control-plane-api
+        run: npm run test:git
+
+      - name: Test deployment state, queue and worker security
+        working-directory: services/control-plane-api
+        run: npm run test:deployments
+
+      - name: Test control plane (unit + HTTP + PostgreSQL + migrations + security)
+        working-directory: services/control-plane-api
+        run: npm run test:ci
+
+  checkpoint5-kubernetes-policy:
+    name: Checkpoint 5 Kubernetes Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - name: Validate acceptance scripts
+        run: bash -n scripts/*.sh
+      - name: Kustomize build
+        run: docker run --rm -v "$PWD:/work:ro" registry.k8s.io/kustomize/kustomize:v5.7.1 build /work/deploy/policy/checkpoint5 > /tmp/checkpoint5-policy.yaml
+      - name: Kubeconform
+        run: docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 -strict -summary -ignore-missing-schemas < deploy/policy/checkpoint5/test/secure-resource.yaml
+      - name: Kyverno test
+        run: docker run --rm -v "$PWD:/work:ro" ghcr.io/kyverno/kyverno-cli:v1.15.2 test /work/deploy/policy/checkpoint5
+
+  docker-build:
+    name: Docker Build + Trivy Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: detect-services
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-services.outputs.matrix) }}
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check Dockerfile Exists
+        id: hasdocker
+        run: |
+          if [ -f "services/${{ matrix.service }}/Dockerfile" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Docker Buildx
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build Image
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: services/${{ matrix.service }}
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.service }}:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Trivy Scan
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:ci-${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Upload Trivy SARIF
+        if: steps.hasdocker.outputs.exists == 'true'
+        uses: github/codeql-action/upload-sarif@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+
+  terraform-validate:
+    name: Terraform Validate + TFLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check Terraform Directory
+        id: check
+        run: |
+          if [ -d terraform ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.check.outputs.exists == 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - if: steps.check.outputs.exists == 'true'
+        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987 # v4.0.0
+
+      - name: Terraform Format Check
+        if: steps.check.outputs.exists == 'true'
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Init
+        if: steps.check.outputs.exists == 'true'
+        run: terraform -chdir=terraform init -backend=false 2>/dev/null || true
+
+      - name: Terraform Validate
+        if: steps.check.outputs.exists == 'true'
+        run: terraform -chdir=terraform validate 2>/dev/null || true
+
+      - name: TFLint
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          tflint --init
+          tflint --config .tflint.hcl terraform || true
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5 # v2.3.6
+        with:
+          config_path: .gitleaks.toml
+          redact: true
+
+  ci-summary:
+    name: CI Summary
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - shell-lint
+      - hadolint
+      - dependency-review
+      - service-tests
+      - docker-build
+      - terraform-validate
+      - secret-scan
+
+    steps:
+      - name: Publish Summary
+        run: |
+          echo "## CI Pipeline Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Shell lint: ${{ needs.shell-lint.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Hadolint: ${{ needs.hadolint.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency review: ${{ needs.dependency-review.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Service tests: ${{ needs.service-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker builds: ${{ needs.docker-build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Terraform validate: ${{ needs.terraform-validate.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Secret scan: ${{ needs.secret-scan.result }}" >> $GITHUB_STEP_SUMMARY

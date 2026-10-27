@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-09-20T01:55:00Z",
+  "releaseDecision": "not_production_ready",
+  "summary": {
+    "unitAndMockSuites": "passed",
+    "frontendBuild": "passed_with_48_lint_warnings_and_zero_errors",
+    "dependencyAudit": "passed_zero_vulnerabilities",
+    "liveInfrastructure": "not_verified"
+  },
+  "results": [
+    { "feature": "audit_schema_redaction", "classification": "verified_with_unit_tests", "status": "passed" },
+    { "feature": "audit_chain_tamper_detection", "classification": "verified_with_unit_tests", "status": "passed" },
+    { "feature": "audit_tenant_isolation", "classification": "verified_with_integration_tests", "status": "passed" },
+    { "feature": "audit_search_export_replay", "classification": "verified_with_unit_tests", "status": "passed" },
+    { "feature": "rbac_secrets_approvals_policy_drift", "classification": "verified_with_integration_tests_and_mocks", "status": "passed" },
+    { "feature": "aws_assume_role", "classification": "verified_with_mocks_or_emulators", "status": "passed" },
+    { "feature": "customer_kubernetes", "classification": "verified_with_mocks_or_emulators", "status": "passed" },
+    { "feature": "postgres_audit_migration", "classification": "not_verified", "status": "blocked", "blocker": "No PostgreSQL service or credential available" },
+    { "feature": "kyverno_admission", "classification": "not_verified", "status": "blocked", "blocker": "No disposable Kyverno-enabled Kubernetes cluster available" },
+    { "feature": "live_aws_registry_dns_tls", "classification": "not_verified", "status": "blocked", "blocker": "No live staging credentials or infrastructure available" },
+    { "feature": "atomic_business_state_and_audit", "classification": "partially_implemented", "status": "blocked", "blocker": "PostgreSQL transactional append exists but legacy controllers are not universally transactionally migrated" },
+    { "feature": "durable_async_export", "classification": "partially_implemented", "status": "blocked", "blocker": "Durable schema exists; local export implementation is synchronous and memory-backed" }
+  ],
+  "commands": {
+    "phase3Harness": "passed",
+    "controlPlaneAll": "passed",
+    "controlPlaneSecurity": { "passed": 62, "failed": 0 },
+    "frontendTests": { "passed": 94, "failed": 0 },
+    "frontendBuild": "passed",
+    "authTests": { "passed": 58, "failed": 0 },
+    "smokeTests": { "passed": 8, "failed": 0 },
+    "migrationContract": "passed",
+    "npmAudit": { "highOrCritical": 0, "total": 0 }
+  },
+  "containsCredentials": false
+}
